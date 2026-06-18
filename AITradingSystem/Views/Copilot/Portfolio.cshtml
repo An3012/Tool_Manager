@@ -1,0 +1,785 @@
+@using AITradingSystem.Models
+@using AITradingSystem.Controllers
+@{
+    ViewData["Title"] = "Danh mục đầu tư - DNSE AI";
+    var positions = ViewBag.Positions as List<TradePosition> ?? new List<TradePosition>();
+    var stocks = ViewBag.Stocks as List<StockViewModel> ?? new List<StockViewModel>();
+    var pref = (ViewBag.Preference as UserPreference) ?? new UserPreference();
+    var totalPnL = (decimal?)ViewBag.TotalPnL ?? 0;
+    var totalTargetAmount = (decimal?)ViewBag.TotalTargetAmount ?? 0;
+    var analysisMap = ViewBag.AnalysisMap as Dictionary<int, PositionAnalysis> ?? new Dictionary<int, PositionAnalysis>();
+}
+
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+<style>
+    :root {
+        --bg-dark: #090a0f;
+        --card-bg: rgba(20, 22, 37, 0.6);
+        --border-color: rgba(255, 255, 255, 0.08);
+        --text-primary: #f3f4f6;
+        --text-secondary: #9ca3af;
+        --accent-green: #10b981;
+        --accent-red: #ef4444;
+        --accent-purple: #8b5cf6;
+        --accent-blue: #3b82f6;
+        --accent-amber: #f59e0b;
+        --accent-cyan: #06b6d4;
+    }
+
+    body {
+        background-color: var(--bg-dark);
+        color: var(--text-primary);
+        font-family: 'Plus Jakarta Sans', sans-serif;
+    }
+
+    .glass-card {
+        background: var(--card-bg);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border: 1px solid var(--border-color);
+        border-radius: 16px;
+        padding: 24px;
+        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+    }
+
+    .gradient-text {
+        background: linear-gradient(135deg, #a78bfa 0%, #3b82f6 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+
+    .pnl-positive { color: var(--accent-green); }
+    .pnl-negative { color: var(--accent-red); }
+
+    .risk-input {
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid var(--border-color);
+        color: white;
+        border-radius: 8px;
+        padding: 6px 10px;
+        width: 110px;
+        font-size: 0.85rem;
+        transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .risk-input:focus {
+        outline: none;
+        border-color: var(--accent-purple);
+        box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.15);
+    }
+
+    .risk-input.target-input {
+        border-color: rgba(245, 158, 11, 0.3);
+        width: 130px;
+    }
+
+    .risk-input.target-input:focus {
+        border-color: var(--accent-amber);
+        box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.15);
+    }
+
+    /* Summary Cards */
+    .summary-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 16px;
+        margin-bottom: 24px;
+    }
+
+    .summary-card {
+        background: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 14px;
+        padding: 20px;
+        text-align: center;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .summary-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+    }
+
+    .summary-card.pnl-card::before { background: linear-gradient(90deg, #10b981, #06b6d4); }
+    .summary-card.target-card::before { background: linear-gradient(90deg, #f59e0b, #ef4444); }
+    .summary-card.progress-card::before { background: linear-gradient(90deg, #8b5cf6, #3b82f6); }
+    .summary-card.count-card::before { background: linear-gradient(90deg, #06b6d4, #8b5cf6); }
+
+    .summary-card .card-label {
+        font-size: 0.78rem;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-bottom: 8px;
+    }
+
+    .summary-card .card-value {
+        font-size: 1.6rem;
+        font-weight: 700;
+    }
+
+    /* Progress Bar */
+    .progress-container {
+        width: 100%;
+        height: 8px;
+        background: rgba(255, 255, 255, 0.08);
+        border-radius: 4px;
+        overflow: hidden;
+        margin: 6px 0;
+    }
+
+    .progress-bar-fill {
+        height: 100%;
+        border-radius: 4px;
+        transition: width 0.8s ease-out;
+        min-width: 2px;
+    }
+
+    .progress-bar-fill.positive {
+        background: linear-gradient(90deg, #10b981, #06b6d4);
+    }
+
+    .progress-bar-fill.negative {
+        background: linear-gradient(90deg, #ef4444, #f97316);
+    }
+
+    .progress-bar-fill.warning {
+        background: linear-gradient(90deg, #f59e0b, #eab308);
+    }
+
+    .progress-bar-fill.complete {
+        background: linear-gradient(90deg, #10b981, #34d399);
+        animation: pulseGlow 1.5s ease-in-out infinite;
+    }
+
+    @@keyframes pulseGlow {
+        0%, 100% { box-shadow: 0 0 4px rgba(16, 185, 129, 0.4); }
+        50% { box-shadow: 0 0 12px rgba(16, 185, 129, 0.8); }
+    }
+
+    /* AI Signal Badge */
+    .ai-signal {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        letter-spacing: 0.03em;
+        white-space: nowrap;
+    }
+
+    .ai-signal.sell {
+        color: #fca5a5;
+        background: rgba(239, 68, 68, 0.15);
+        border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+
+    .ai-signal.watch {
+        color: #fcd34d;
+        background: rgba(245, 158, 11, 0.15);
+        border: 1px solid rgba(245, 158, 11, 0.3);
+    }
+
+    .ai-signal.hold {
+        color: #93c5fd;
+        background: rgba(59, 130, 246, 0.15);
+        border: 1px solid rgba(59, 130, 246, 0.3);
+    }
+
+    .ai-signal.caution {
+        color: #fdba74;
+        background: rgba(249, 115, 22, 0.15);
+        border: 1px solid rgba(249, 115, 22, 0.3);
+    }
+
+    .ai-signal.none {
+        color: #6b7280;
+        background: rgba(107, 114, 128, 0.1);
+        border: 1px solid rgba(107, 114, 128, 0.2);
+    }
+
+    /* AI Analysis Tooltip / Row */
+    .ai-reason-text {
+        font-size: 0.78rem;
+        color: var(--text-secondary);
+        margin-top: 4px;
+        line-height: 1.4;
+    }
+
+    /* Position Row */
+    .position-row {
+        border-bottom: 1px solid var(--border-color);
+        transition: background 0.2s;
+    }
+
+    .position-row:hover {
+        background: rgba(139, 92, 246, 0.04);
+    }
+
+    .position-row:last-child {
+        border-bottom: none;
+    }
+
+    /* Target Section */
+    .target-section {
+        background: rgba(245, 158, 11, 0.04);
+        border: 1px solid rgba(245, 158, 11, 0.12);
+        border-radius: 10px;
+        padding: 12px 16px;
+        margin-top: 8px;
+    }
+
+    .target-label {
+        font-size: 0.72rem;
+        color: var(--accent-amber);
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        margin-bottom: 4px;
+    }
+
+    /* Source Badge */
+    .source-badge {
+        font-size: 0.73rem;
+        padding: 4px 8px;
+        border-radius: 4px;
+        display: inline-block;
+    }
+
+    .source-badge.ai {
+        color: #d8b4fe;
+        border: 1px solid rgba(167, 139, 250, 0.4);
+        background: rgba(139, 92, 246, 0.15);
+    }
+
+    .source-badge.real {
+        color: #86efac;
+        border: 1px solid rgba(34, 197, 94, 0.4);
+        background: rgba(34, 197, 94, 0.15);
+    }
+
+    /* Action Buttons */
+    .btn-save-target {
+        background: linear-gradient(135deg, rgba(139, 92, 246, 0.2), rgba(59, 130, 246, 0.2));
+        border: 1px solid rgba(139, 92, 246, 0.3);
+        color: #c4b5fd;
+        border-radius: 8px;
+        padding: 6px 14px;
+        font-size: 0.82rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .btn-save-target:hover {
+        background: linear-gradient(135deg, rgba(139, 92, 246, 0.35), rgba(59, 130, 246, 0.35));
+        border-color: rgba(139, 92, 246, 0.5);
+        color: white;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(139, 92, 246, 0.2);
+    }
+
+    .btn-sell {
+        background: rgba(239, 68, 68, 0.15);
+        border: 1px solid rgba(239, 68, 68, 0.3);
+        color: #fca5a5;
+        border-radius: 8px;
+        padding: 6px 14px;
+        font-size: 0.82rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .btn-sell:hover {
+        background: rgba(239, 68, 68, 0.3);
+        border-color: rgba(239, 68, 68, 0.5);
+        color: white;
+        transform: translateY(-1px);
+    }
+
+    /* Responsive table wrapper */
+    .position-card {
+        background: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 14px;
+        overflow: hidden;
+        margin-bottom: 12px;
+    }
+
+    .position-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 16px 20px;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .position-body {
+        padding: 16px 20px;
+    }
+
+    .stat-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+        gap: 12px;
+    }
+
+    .stat-item .stat-label {
+        font-size: 0.72rem;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+
+    .stat-item .stat-value {
+        font-size: 0.95rem;
+        font-weight: 600;
+        margin-top: 2px;
+    }
+</style>
+
+<div class="container-fluid py-4">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-end mb-4">
+        <div>
+            <h1 class="fw-bold mb-1"><span class="gradient-text">Danh mục đầu tư</span></h1>
+            <p class="text-secondary m-0">Thiết lập mục tiêu lợi nhuận cho từng mã · Nguồn mua thêm cố định: @pref.AmountPerTrade.ToString("N0") đ</p>
+        </div>
+    </div>
+
+    @if (TempData["SuccessMessage"] != null)
+    {
+        <div class="alert alert-success bg-opacity-10 border-success text-success alert-dismissible fade show mb-4" role="alert" style="background: rgba(16,185,129,0.08); border-color: rgba(16,185,129,0.3) !important;">
+            ✅ @TempData["SuccessMessage"]
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    }
+
+    <!-- Summary Dashboard -->
+    <div class="summary-grid">
+        <div class="summary-card pnl-card">
+            <div class="card-label">Tổng Lãi/Lỗ tạm tính</div>
+            <div class="card-value @(totalPnL >= 0 ? "pnl-positive" : "pnl-negative")">
+                @(totalPnL >= 0 ? "+" : "")@totalPnL.ToString("N0") đ
+            </div>
+        </div>
+        <div class="summary-card target-card">
+            <div class="card-label">Tổng mục tiêu đặt ra</div>
+            <div class="card-value" style="color: var(--accent-amber);">
+                @totalTargetAmount.ToString("N0") đ
+            </div>
+        </div>
+        <div class="summary-card progress-card">
+            <div class="card-label">Tiến độ tổng thể</div>
+            @{
+                var overallProgress = totalTargetAmount > 0 ? Math.Min(100, Math.Max(-100, totalPnL / totalTargetAmount * 100)) : 0;
+            }
+            <div class="card-value" style="color: var(--accent-purple);">
+                @overallProgress.ToString("N1")%
+            </div>
+            <div class="progress-container mt-2">
+                <div class="progress-bar-fill @(overallProgress >= 100 ? "complete" : overallProgress >= 0 ? "positive" : "negative")"
+                     style="width: @(Math.Max(0, overallProgress))%"></div>
+            </div>
+        </div>
+        <div class="summary-card count-card">
+            <div class="card-label">Vị thế đang giữ</div>
+            <div class="card-value" style="color: var(--accent-cyan);">
+                @positions.Count <span style="font-size: 0.85rem; color: var(--text-secondary);">mã</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Position List -->
+    @if (!positions.Any())
+    {
+        <div class="glass-card text-center py-5">
+            <div style="font-size: 3rem; margin-bottom: 16px;">📊</div>
+            <p class="text-secondary mb-2">Bạn chưa có cổ phiếu nào trong danh mục.</p>
+            <a asp-action="Index" class="text-info" style="text-decoration: none;">
+                ← Quay lại Dashboard để tìm tín hiệu mua
+            </a>
+        </div>
+    }
+    else
+    {
+        foreach (var pos in positions)
+        {
+            var currentPrice = stocks.FirstOrDefault(s => s.Symbol == pos.Symbol)?.CurrentPrice ?? pos.EntryPrice;
+            var pnl = (currentPrice - pos.EntryPrice) * pos.Quantity;
+            var pnlPercent = pos.EntryPrice > 0 ? (currentPrice - pos.EntryPrice) / pos.EntryPrice * 100 : 0;
+            var analysis = analysisMap.ContainsKey(pos.Id) ? analysisMap[pos.Id] : null;
+            var hasTarget = pos.TargetProfitAmount.HasValue && pos.TargetProfitAmount.Value > 0;
+
+            <div class="position-card">
+                <!-- Position Header -->
+                <div class="position-header">
+                    <div class="d-flex align-items-center gap-3">
+                        <div>
+                            <span class="fw-bold text-white" style="font-size: 1.15rem;">@pos.Symbol</span>
+                            @if (pos.IsAiTrade)
+                            {
+                                <span class="source-badge ai ms-2">🤖 AI Tự học</span>
+                            }
+                            else
+                            {
+                                <span class="source-badge real ms-2">💼 Lệnh thật</span>
+                            }
+                        </div>
+                    </div>
+                    <div class="text-end">
+                        <div class="@(pnl >= 0 ? "pnl-positive" : "pnl-negative")" style="font-size: 1.25rem; font-weight: 700;">
+                            @(pnl >= 0 ? "+" : "")@pnl.ToString("N0") đ
+                        </div>
+                        <div class="small @(pnlPercent >= 0 ? "pnl-positive" : "pnl-negative")" style="font-size: 0.82rem;">
+                            (@pnlPercent.ToString("N2")%)
+                        </div>
+                    </div>
+                </div>
+
+                <div class="position-body">
+                    <!-- Stats Grid -->
+                    <div class="stat-grid mb-3">
+                        <div class="stat-item">
+                            <div class="stat-label">Số lượng</div>
+                            <div class="stat-value">@pos.Quantity.ToString("N0")</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">Giá vốn</div>
+                            <div class="stat-value">@pos.EntryPrice.ToString("N0") đ</div>
+                        </div>
+                        @if (pos.InvestedAmount.HasValue && pos.InvestedAmount.Value > 0)
+                        {
+                            <div class="stat-item">
+                                <div class="stat-label">💰 Vốn đầu tư</div>
+                                <div class="stat-value" style="color: var(--accent-amber);">@pos.InvestedAmount.Value.ToString("N0") đ</div>
+                            </div>
+                        }
+                        <div class="stat-item">
+                            <div class="stat-label">Giá hiện tại</div>
+                            <div class="stat-value @(currentPrice >= pos.EntryPrice ? "pnl-positive" : "pnl-negative")">@currentPrice.ToString("N0") đ</div>
+                        </div>
+                        @if (pos.TakeProfitPrice.HasValue && pos.TakeProfitPrice.Value > 0)
+                        {
+                            <div class="stat-item">
+                                <div class="stat-label">Giá chốt lời</div>
+                                <div class="stat-value" style="color: var(--accent-green);">@pos.TakeProfitPrice.Value.ToString("N0") đ</div>
+                            </div>
+                        }
+                        @if (pos.StopLossPrice.HasValue && pos.StopLossPrice.Value > 0)
+                        {
+                            <div class="stat-item">
+                                <div class="stat-label">Giá cắt lỗ</div>
+                                <div class="stat-value" style="color: var(--accent-red);">@pos.StopLossPrice.Value.ToString("N0") đ</div>
+                            </div>
+                        }
+                        @if (analysis != null)
+                        {
+                            @if (pos.ExpectedHoldDays.HasValue && pos.ExpectedHoldDays.Value > 0)
+                            {
+                                <div class="stat-item">
+                                    <div class="stat-label">⏳ Thời gian giữ</div>
+                                    <div class="stat-value" style="color: var(--accent-purple);">
+                                        @analysis.DaysHeld / @pos.ExpectedHoldDays.Value ngày
+                                    </div>
+                                </div>
+                                <div class="stat-item">
+                                    <div class="stat-label">⏳ Ngày còn lại</div>
+                                    @if (analysis.RemainingDays.HasValue)
+                                    {
+                                        if (analysis.RemainingDays.Value <= 0)
+                                        {
+                                            <div class="stat-value" style="color: var(--accent-red); font-weight: bold;">
+                                                Quá hạn @Math.Abs(analysis.RemainingDays.Value) ngày
+                                            </div>
+                                        }
+                                        else if (analysis.RemainingDays.Value <= 2)
+                                        {
+                                            <div class="stat-value" style="color: var(--accent-amber); font-weight: bold;">
+                                                Còn @analysis.RemainingDays.Value ngày
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <div class="stat-value" style="color: var(--accent-green);">
+                                                Còn @analysis.RemainingDays.Value ngày
+                                            </div>
+                                        }
+                                    }
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="stat-item">
+                                    <div class="stat-label">⏳ Đã giữ</div>
+                                    <div class="stat-value">@analysis.DaysHeld ngày</div>
+                                </div>
+                            }
+                        }
+                    </div>
+
+                    <!-- Target Progress Section -->
+                    @if (hasTarget && analysis != null)
+                    {
+                        <div class="target-section mb-3">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <div class="target-label">🎯 Mục tiêu lợi nhuận sau bán</div>
+                                <div class="d-flex align-items-center gap-2">
+                                    <span style="font-size: 0.85rem; font-weight: 600; color: var(--accent-amber);">
+                                        @pos.TargetProfitAmount.Value.ToString("N0") đ
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="progress-container" style="height: 10px;">
+                                @{
+                                    var progressPct = analysis.ProgressPercent;
+                                    var barClass = progressPct >= 100 ? "complete" : progressPct >= 80 ? "warning" : progressPct >= 0 ? "positive" : "negative";
+                                    var barWidth = Math.Max(0, Math.Min(100, progressPct));
+                                }
+                                <div class="progress-bar-fill @barClass" style="width: @barWidth%"></div>
+                            </div>
+                            <div class="d-flex justify-content-between mt-1" style="font-size: 0.78rem;">
+                                <span class="@(pnl >= 0 ? "pnl-positive" : "pnl-negative")">
+                                    Đạt: @pnl.ToString("N0") đ (@progressPct.ToString("N1")%)
+                                </span>
+                                <span class="text-secondary">
+                                    Còn thiếu: @analysis.RemainingAmount.ToString("N0") đ
+                                </span>
+                            </div>
+                        </div>
+                    }
+
+                    <!-- AI Analysis Signal -->
+                    @if (analysis != null)
+                    {
+                        <div class="d-flex align-items-start gap-2 mb-3" style="padding: 10px 14px; background: rgba(139, 92, 246, 0.04); border-radius: 10px; border: 1px solid rgba(139, 92, 246, 0.08);">
+                            <span style="font-size: 1.1rem;">🧠</span>
+                            <div>
+                                <div class="d-flex align-items-center gap-2 mb-1">
+                                    <span style="font-size: 0.72rem; color: var(--accent-purple); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">AI Phân tích</span>
+                                    @{
+                                        var signalClass = analysis.AiSignal switch
+                                        {
+                                            "SELL" => "sell",
+                                            "PARTIAL" => "watch",
+                                            "WATCH" => "watch",
+                                            "HOLD" => "hold",
+                                            "CAUTION" => "caution",
+                                            _ => "none"
+                                        };
+                                        var signalLabel = analysis.AiSignal switch
+                                        {
+                                            "SELL" => "🔴 BÁN",
+                                            "PARTIAL" => "🟠 BÁN BỚT",
+                                            "WATCH" => "🟡 THEO DÕI SÁT",
+                                            "HOLD" => "🔵 GIỮ",
+                                            "CAUTION" => "🟠 CẢNH BÁO",
+                                            _ => "⚪ CHƯA CÓ"
+                                        };
+                                    }
+                                    <span class="ai-signal @signalClass">@signalLabel</span>
+                                </div>
+                                <div class="ai-reason-text">@analysis.AiReason</div>
+                                @if (!pos.IsAiTrade)
+                                {
+                                    <div class="ai-reason-text" style="color: var(--accent-cyan);">
+                                        Hạn mức vốn cho mã: @analysis.FixedBudget.ToString("N0") đ | Đã dùng: @analysis.InvestedAmount.ToString("N0") đ | Còn lại: @analysis.RemainingBudget.ToString("N0") đ
+                                    </div>
+                                    <div class="ai-reason-text" style="color: var(--accent-amber);">
+                                        Có thể mua thêm tối đa: @analysis.SuggestedAddAmount.ToString("N0") đ (@analysis.SuggestedAddQuantity.ToString("N0") CP theo giá hiện tại)
+                                    </div>
+                                    <div class="ai-reason-text" style="color: var(--accent-green);">
+                                        Gợi ý mua thêm: chỉ giải ngân khi giá điều chỉnh về vùng an toàn và tổng vốn sau mua vẫn không vượt @analysis.FixedBudget.ToString("N0") đ.
+                                    </div>
+                                    @if (analysis.CurrentPnL > 0 && analysis.ProgressPercent >= 50)
+                                    {
+                                        <div class="ai-reason-text" style="color: var(--accent-amber);">
+                                            Gợi ý chốt bớt: có thể bán một phần để khóa lãi, giữ lại phần nhỏ làm vị thế tiếp tục quay vòng.
+                                        </div>
+                                    }
+                                    @if (analysis.CanPartialSell)
+                                    {
+                                        <div class="ai-reason-text" style="color: var(--accent-green);">
+                                            Đề xuất bán bớt: @analysis.SuggestedSellQuantity.ToString("N0") CP, khóa khoảng @analysis.SuggestedSellProfit.ToString("N0") đ, còn lại @((pos.Quantity - analysis.SuggestedSellQuantity).ToString("N0")) CP.
+                                        </div>
+                                    }
+                                }
+                            </div>
+                        </div>
+                    }
+
+                    <!-- Target Settings Form -->
+                    <form asp-action="UpdateRisk" method="post">
+                        <input type="hidden" name="id" value="@pos.Id" />
+                        <div class="d-flex flex-wrap align-items-end gap-3">
+                            <div>
+                                <label class="d-block" style="font-size: 0.72rem; color: var(--accent-cyan); font-weight: 600; margin-bottom: 4px;">
+                                    Hạn mức vốn cho mã (đ)
+                                </label>
+                                <input type="hidden" name="budgetAmount" id="budgetAmount_@pos.Id" value="@(pos.BudgetAmount?.ToString("0") ?? pref.AmountPerTrade.ToString("0"))" />
+                                <input type="text" id="budgetAmountDisplay_@pos.Id" value="@(pos.BudgetAmount?.ToString("N0") ?? pref.AmountPerTrade.ToString("N0"))"
+                                       class="risk-input number-format" data-target="budgetAmount_@pos.Id" placeholder="VD: 1000000" />
+                            </div>
+                            <div>
+                                <label class="d-block" style="font-size: 0.72rem; color: var(--accent-amber); font-weight: 600; margin-bottom: 4px;">
+                                    🎯 MỤC TIÊU LỢI NHUẬN SAU BÁN (đ)
+                                </label>
+                                <input type="hidden" name="targetProfitAmount" id="targetProfitAmount_@pos.Id" value="@(pos.TargetProfitAmount?.ToString("0") ?? "")" />
+                                <input type="text" id="targetProfitAmountDisplay_@pos.Id" value="@(pos.TargetProfitAmount?.ToString("N0") ?? "")"
+                                        class="risk-input target-input number-format" data-target="targetProfitAmount_@pos.Id" placeholder="Lãi muốn đạt, VD: 100000" />
+                            </div>
+                            <div>
+                                <label class="d-block" style="font-size: 0.72rem; color: var(--accent-green); font-weight: 500; margin-bottom: 4px;">
+                                    Chốt lời - giá bán tự động
+                                </label>
+                                <input type="hidden" name="takeProfit" id="takeProfit_@pos.Id" value="@(pos.TakeProfitPrice?.ToString("0") ?? "")" />
+                                <input type="text" id="takeProfitDisplay_@pos.Id" value="@(pos.TakeProfitPrice?.ToString("N0") ?? "")"
+                                       class="risk-input text-success number-format" data-target="takeProfit_@pos.Id" placeholder="Tự động" />
+                            </div>
+                            <div>
+                                <label class="d-block" style="font-size: 0.72rem; color: var(--accent-red); font-weight: 500; margin-bottom: 4px;">
+                                    Cắt lỗ - số tiền lỗ tối đa
+                                </label>
+                                <input type="hidden" name="stopLoss" id="stopLoss_@pos.Id" value="@(pos.StopLossPrice?.ToString("0") ?? "")" />
+                                <input type="text" id="stopLossDisplay_@pos.Id" value="@(pos.StopLossPrice?.ToString("N0") ?? "")"
+                                       class="risk-input text-danger number-format" data-target="stopLoss_@pos.Id" placeholder="Giá cắt" />
+                            </div>
+                            <div>
+                                <label class="d-block" style="font-size: 0.72rem; color: var(--accent-purple); font-weight: 600; margin-bottom: 4px;">
+                                    ⏳ THỜI GIAN GIỮ (ngày)
+                                </label>
+                                <input type="number" name="expectedHoldDays" value="@(pos.ExpectedHoldDays)"
+                                       class="risk-input text-white" style="width: 100px; border-color: rgba(139, 92, 246, 0.3);" placeholder="VD: 15" min="1" />
+                            </div>
+                            <div class="d-flex gap-2">
+                                <button type="submit" class="btn-save-target" title="Lưu mục tiêu & rủi ro">
+                                    💾 Lưu mục tiêu
+                                </button>
+                                <button type="button" onclick="buyMorePosition(@pos.Id, '@pos.Symbol')" class="btn-save-target" title="Mua thêm từ nguồn cố định">
+                                    ➕ Mua thêm
+                                </button>
+                                <button type="button" onclick="partialSellPosition(@pos.Id, @currentPrice, '@pos.Symbol', @(analysis?.SuggestedSellQuantity ?? 0))" class="btn-save-target" style="background: rgba(245, 158, 11, 0.18); border-color: rgba(245, 158, 11, 0.35); color: #fcd34d;" title="Bán một phần để khóa lãi">
+                                    🟠 Bán bớt
+                                </button>
+                                <button type="button" onclick="sellPosition(@pos.Id, @currentPrice, '@pos.Symbol')" class="btn-sell">
+                                    📤 Bán
+                                </button>
+                            </div>
+                        </div>
+                        @if (!hasTarget)
+                        {
+                            <div class="mt-2" style="font-size: 0.75rem; color: var(--text-secondary); font-style: italic;">
+                                💡 Nhập số lãi mong muốn sau khi bán cho mã @pos.Symbol. AI sẽ tự động tính giá chốt lời từ số tiền này và theo dõi tiến độ.
+                            </div>
+                        }
+                    </form>
+                </div>
+            </div>
+        }
+    }
+</div>
+
+<!-- Hidden form for selling -->
+<form id="sellForm" asp-action="ClosePosition" method="post" style="display:none;">
+    <input type="hidden" name="id" id="sellId" />
+    <input type="hidden" name="currentPrice" id="sellPrice" />
+</form>
+
+<form id="buyMoreForm" asp-action="AddMorePosition" method="post" style="display:none;">
+    <input type="hidden" name="id" id="buyMoreId" />
+</form>
+
+<form id="partialSellForm" asp-action="SellPartialPosition" method="post" style="display:none;">
+    <input type="hidden" name="id" id="partialSellId" />
+    <input type="hidden" name="sellQuantity" id="partialSellQuantity" />
+    <input type="hidden" name="currentPrice" id="partialSellPrice" />
+</form>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const numberInputs = document.querySelectorAll('.number-format');
+        
+        numberInputs.forEach(input => {
+            input.addEventListener('input', function (e) {
+                let cursorPosition = this.selectionStart;
+                let originalLength = this.value.length;
+                
+                // Loại bỏ tất cả ký tự không phải là số
+                let cleanVal = this.value.replace(/\D/g, '');
+                
+                // Cập nhật giá trị số thực cho input hidden
+                const targetId = this.getAttribute('data-target');
+                if (targetId) {
+                    const hiddenInput = document.getElementById(targetId);
+                    if (hiddenInput) {
+                        hiddenInput.value = cleanVal;
+                    }
+                }
+                
+                // Định dạng hiển thị bằng dấu phẩy
+                let formattedVal = cleanVal ? parseInt(cleanVal, 10).toLocaleString('en-US') : '';
+                this.value = formattedVal;
+                
+                // Giữ vị trí con trỏ chuột không bị nhảy về cuối
+                let newLength = formattedVal.length;
+                let diff = newLength - originalLength;
+                let newCursorPosition = Math.max(0, cursorPosition + diff);
+                this.setSelectionRange(newCursorPosition, newCursorPosition);
+            });
+            
+            input.addEventListener('blur', function() {
+                const targetId = this.getAttribute('data-target');
+                if (targetId) {
+                    const hiddenInput = document.getElementById(targetId);
+                    if (hiddenInput && !this.value) {
+                        hiddenInput.value = '';
+                    }
+                }
+            });
+        });
+    });
+
+    function sellPosition(id, price, symbol) {
+        if (confirm('Bạn có chắc chắn muốn bán toàn bộ vị thế ' + symbol + ' với giá ' + price.toLocaleString() + ' đ?')) {
+            document.getElementById('sellId').value = id;
+            document.getElementById('sellPrice').value = price;
+            document.getElementById('sellForm').submit();
+        }
+    }
+
+    function buyMorePosition(id, symbol) {
+        const fixedAmount = @((long)pref.AmountPerTrade);
+        if (confirm('Mua thêm cho ' + symbol + ' với nguồn cố định ' + fixedAmount.toLocaleString() + ' đ?')) {
+            document.getElementById('buyMoreId').value = id;
+            document.getElementById('buyMoreForm').submit();
+        }
+    }
+
+    function partialSellPosition(id, price, symbol, suggestedQty) {
+        const defaultQty = suggestedQty && suggestedQty > 0 ? suggestedQty : 1;
+        const qtyText = prompt('Nhập số cổ phiếu muốn bán bớt của ' + symbol + ' (gợi ý: ' + defaultQty + ')', defaultQty.toString());
+        if (!qtyText) return;
+
+        const sellQty = parseInt(qtyText.replace(/\D/g, ''), 10);
+        if (!sellQty || sellQty <= 0) {
+            alert('Số lượng không hợp lệ.');
+            return;
+        }
+
+        if (confirm('Bán bớt ' + sellQty + ' CP ' + symbol + ' với giá ' + price.toLocaleString() + ' đ để khóa một phần lãi?')) {
+            document.getElementById('partialSellId').value = id;
+            document.getElementById('partialSellQuantity').value = sellQty;
+            document.getElementById('partialSellPrice').value = price;
+            document.getElementById('partialSellForm').submit();
+        }
+    }
+</script>

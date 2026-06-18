@@ -1,0 +1,220 @@
+@using AITradingSystem.Models
+@{
+    ViewData["Title"] = "Cấu hình & Tài khoản - DNSE AI";
+    var pref = (ViewBag.Preference as UserPreference) ?? new UserPreference();
+}
+
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+<style>
+    :root {
+        --bg-dark: #090a0f;
+        --card-bg: rgba(20, 22, 37, 0.6);
+        --border-color: rgba(255, 255, 255, 0.08);
+        --text-primary: #f3f4f6;
+        --text-secondary: #9ca3af;
+        --accent-green: #10b981;
+        --accent-red: #ef4444;
+        --accent-purple: #8b5cf6;
+        --accent-blue: #3b82f6;
+        --accent-amber: #f59e0b;
+    }
+
+    body {
+        background-color: var(--bg-dark);
+        color: var(--text-primary);
+        font-family: 'Plus Jakarta Sans', sans-serif;
+    }
+
+    .glass-card {
+        background: var(--card-bg);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border: 1px solid var(--border-color);
+        border-radius: 16px;
+        padding: 24px;
+        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+    }
+
+    .gradient-text {
+        background: linear-gradient(135deg, #a78bfa 0%, #3b82f6 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+
+    .custom-input {
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid var(--border-color);
+        color: var(--text-primary);
+        border-radius: 8px;
+        padding: 10px;
+    }
+
+    .custom-input:focus {
+        background: rgba(255, 255, 255, 0.08);
+        color: var(--text-primary);
+        border-color: var(--accent-purple);
+        box-shadow: 0 0 0 0.25rem rgba(139, 92, 246, 0.25);
+    }
+
+    .custom-label {
+        color: var(--text-secondary);
+        font-size: 0.9rem;
+        margin-bottom: 6px;
+    }
+
+    .btn-gradient {
+        background: linear-gradient(135deg, var(--accent-purple) 0%, var(--accent-blue) 100%);
+        color: white;
+        border: none;
+        border-radius: 10px;
+        padding: 12px 24px;
+        font-weight: 600;
+        transition: opacity 0.2s;
+    }
+
+    .btn-gradient:hover {
+        opacity: 0.9;
+        color: white;
+    }
+
+    .section-title {
+        font-size: 0.8rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--accent-amber);
+        margin-bottom: 12px;
+    }
+</style>
+
+<div class="container py-5">
+    <div class="mb-5">
+        <h1 class="fw-bold mb-2"><span class="gradient-text">Cấu hình & Liên kết</span></h1>
+        <p class="text-secondary">Quản lý tài khoản DNSE và nhập mục tiêu lợi nhuận theo tiền cho từng lệnh.</p>
+    </div>
+
+    @if (TempData["SuccessMessage"] != null)
+    {
+        <div class="alert alert-success bg-opacity-10 border-success text-success alert-dismissible fade show mb-4" role="alert">
+            @TempData["SuccessMessage"]
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    }
+
+    <div class="row g-4">
+        <div class="col-lg-7">
+            <div class="glass-card h-100">
+                <h3 class="h5 mb-4 fw-bold text-white d-flex align-items-center gap-2">
+                    <span class="text-primary">⚙️</span> Cấu hình mục tiêu tiền
+                </h3>
+
+                <form asp-action="SavePreferences" method="post" class="d-flex flex-column gap-4">
+                    <input type="hidden" name="Id" value="@pref.Id" />
+
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="custom-label">Phân tiền mỗi lệnh (đ)</label>
+                            <input type="number" name="AmountPerTrade" value="@((long)pref.AmountPerTrade)" class="form-control custom-input" min="0" step="100000" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="custom-label">Mục tiêu lợi nhuận (đ)</label>
+                            <input type="number" name="TargetAmount" value="@((long)pref.TargetAmount)" class="form-control custom-input" min="0" step="100000" />
+                        </div>
+                    </div>
+
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="custom-label">Chốt lời (đ)</label>
+                            <input type="number" name="TakeProfitAmount" value="@((long)pref.TakeProfitAmount)" class="form-control custom-input" min="0" step="100000" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="custom-label">Cắt lỗ (đ)</label>
+                            <input type="number" name="StopLossAmount" value="@((long)pref.StopLossAmount)" class="form-control custom-input" min="0" step="100000" />
+                        </div>
+                    </div>
+
+                    <div class="section-title">Thiết lập nâng cao</div>
+
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="custom-label">% Lợi nhuận kỳ vọng</label>
+                            <input type="number" name="TargetProfitPercentage" value="@pref.TargetProfitPercentage" class="form-control custom-input" step="0.5" min="0" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="custom-label">% Cắt lỗ tối đa</label>
+                            <input type="number" name="MaxLossPercentage" value="@pref.MaxLossPercentage" class="form-control custom-input" step="0.5" min="0" />
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="custom-label">Thời gian đầu tư</label>
+                        <input type="text" name="InvestmentHorizon" value="@pref.InvestmentHorizon" class="form-control custom-input" placeholder="Ví dụ: Short-term (T+2.5)" />
+                    </div>
+
+                    <div>
+                        <label class="custom-label">Khẩu vị rủi ro</label>
+                        <select name="RiskTolerance" class="form-select custom-input">
+                            <option value="Low" selected="@(pref.RiskTolerance == "Low")">Thấp</option>
+                            <option value="Medium" selected="@(pref.RiskTolerance == "Medium")">Trung bình</option>
+                            <option value="High" selected="@(pref.RiskTolerance == "High")">Cao</option>
+                        </select>
+                    </div>
+
+                    <button type="submit" class="btn btn-gradient w-100 mt-2">Lưu cấu hình</button>
+                </form>
+            </div>
+        </div>
+
+        <div class="col-lg-5">
+            <div class="glass-card h-100">
+                <h3 class="h5 mb-4 fw-bold text-white d-flex align-items-center gap-2">
+                    <span class="text-info">🔐</span> Tài khoản DNSE
+                </h3>
+
+                @if (!string.IsNullOrEmpty(pref.DnseUsername))
+                {
+                    <div class="p-4 rounded mb-4" style="background: rgba(16, 185, 129, 0.05); border: 1px dashed rgba(16, 185, 129, 0.3);">
+                        <div class="d-flex align-items-center gap-3 mb-3">
+                            <div class="bg-success rounded-circle" style="width: 12px; height: 12px;"></div>
+                            <div class="fw-bold text-white">Đã kết nối thành công</div>
+                        </div>
+                        <div class="text-secondary small mb-1">Mã khách hàng:</div>
+                        <div class="text-white font-monospace mb-4">@pref.DnseUsername</div>
+
+                        <div class="d-flex gap-2">
+                            <form asp-action="SyncDnse" method="post" class="flex-grow-1">
+                                <button type="submit" class="btn btn-sm btn-info w-100 py-2">🔄 Đồng bộ ngay</button>
+                            </form>
+                            <form asp-action="UnlinkDnse" method="post" class="flex-grow-1" onsubmit="return confirm('Xác nhận hủy liên kết?');">
+                                <button type="submit" class="btn btn-sm btn-outline-danger w-100 py-2">Hủy liên kết</button>
+                            </form>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <form asp-action="SaveDnseAccount" method="post" class="d-flex flex-column gap-3">
+                        <p class="text-secondary small">Nhập thông tin đăng nhập DNSE để đồng bộ danh mục thật.</p>
+                        <div>
+                            <label class="custom-label">SĐT / Mã KH DNSE</label>
+                            <input type="text" name="DnseUsername" class="form-control custom-input" placeholder="Ví dụ: 1002419601" required />
+                        </div>
+                        <div>
+                            <label class="custom-label">Mật khẩu DNSE</label>
+                            <input type="password" name="DnsePassword" class="form-control custom-input" placeholder="Nhập mật khẩu" required />
+                        </div>
+                        <button type="submit" class="btn btn-outline-info w-100 py-2 mt-2">Kết nối tài khoản</button>
+                    </form>
+                }
+
+                <div class="mt-4 p-3 rounded bg-white bg-opacity-5 border border-white border-opacity-10">
+                    <div class="text-warning small d-flex gap-2">
+                        <span>⚠️</span>
+                        <span>Thông tin của bạn được dùng để đồng bộ danh mục và thiết lập mục tiêu giao dịch.</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

@@ -1,0 +1,14 @@
+# Ignore build folders
+obj/
+bin/
+.vs/
+
+# Ignore user settings and caches
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Scraper outputs/temp files
+debug_login.png
+dnse_deals.json

@@ -1,0 +1,690 @@
+@{
+    ViewData["Title"] = "AI Trading Copilot - DNSE";
+    var pref = (ViewBag.Preference as AITradingSystem.Models.UserPreference) ?? new AITradingSystem.Models.UserPreference();
+    var positions = ViewBag.Positions as List<AITradingSystem.Models.TradePosition> ?? new List<AITradingSystem.Models.TradePosition>();
+    var stocks = ViewBag.Stocks as List<AITradingSystem.Controllers.StockViewModel> ?? new List<AITradingSystem.Controllers.StockViewModel>();
+    var strategies = ViewBag.Strategies as List<AITradingSystem.Models.TradingStrategy> ?? new List<AITradingSystem.Models.TradingStrategy>();
+    var totalPnL = (decimal?)ViewBag.TotalPnL ?? 0;
+    var chartPositions = positions.Where(p => !p.IsAiTrade).ToList();
+    var positionLabels = chartPositions.Select(p => p.Symbol).ToList();
+    var positionProgress = chartPositions.Select(p =>
+    {
+        var currentPrice = stocks.FirstOrDefault(s => s.Symbol == p.Symbol)?.CurrentPrice ?? p.EntryPrice;
+        var pnl = (currentPrice - p.EntryPrice) * p.Quantity;
+        return p.TargetProfitAmount.HasValue && p.TargetProfitAmount.Value > 0
+            ? Math.Min(100m, Math.Max(-100m, pnl / p.TargetProfitAmount.Value * 100m))
+            : Math.Round((currentPrice - p.EntryPrice) / p.EntryPrice * 100m, 2);
+    }).ToList();
+    var positionPnL = chartPositions.Select(p =>
+    {
+        var currentPrice = stocks.FirstOrDefault(s => s.Symbol == p.Symbol)?.CurrentPrice ?? p.EntryPrice;
+        return Math.Round((currentPrice - p.EntryPrice) * p.Quantity, 0);
+    }).ToList();
+    var positionInvested = chartPositions.Select(p => Math.Round(p.InvestedAmount ?? (p.EntryPrice * p.Quantity), 0)).ToList();
+}
+
+<!-- Google Fonts -->
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+    :root {
+        --bg-dark: #090a0f;
+        --card-bg: rgba(20, 22, 37, 0.6);
+        --border-color: rgba(255, 255, 255, 0.08);
+        --text-primary: #f3f4f6;
+        --text-secondary: #9ca3af;
+        --accent-green: #10b981;
+        --accent-red: #ef4444;
+        --accent-purple: #8b5cf6;
+        --accent-blue: #3b82f6;
+    }
+
+    body {
+        background-color: var(--bg-dark);
+        color: var(--text-primary);
+        font-family: 'Plus Jakarta Sans', sans-serif;
+    }
+
+    /* Glassmorphism card */
+    .glass-card {
+        background: var(--card-bg);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border: 1px solid var(--border-color);
+        border-radius: 16px;
+        padding: 24px;
+        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        transition: all 0.3s ease;
+    }
+
+    .glass-card:hover {
+        border-color: rgba(255, 255, 255, 0.15);
+    }
+
+    .gradient-text {
+        background: linear-gradient(135deg, #a78bfa 0%, #3b82f6 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+
+    .btn-gradient {
+        background: linear-gradient(135deg, var(--accent-purple) 0%, var(--accent-blue) 100%);
+        color: white;
+        border: none;
+        border-radius: 10px;
+        padding: 10px 20px;
+        font-weight: 600;
+        transition: opacity 0.2s;
+    }
+
+    .btn-gradient:hover {
+        opacity: 0.9;
+        color: white;
+    }
+
+    .stock-badge {
+        font-size: 0.85rem;
+        padding: 4px 8px;
+        border-radius: 6px;
+    }
+
+    .badge-up {
+        background-color: rgba(16, 185, 129, 0.15);
+        color: var(--accent-green);
+    }
+
+    .badge-down {
+        background-color: rgba(239, 68, 68, 0.15);
+        color: var(--accent-red);
+    }
+
+    .custom-input {
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid var(--border-color);
+        color: var(--text-primary);
+        border-radius: 8px;
+        padding: 10px;
+    }
+
+    .custom-input:focus {
+        background: rgba(255, 255, 255, 0.08);
+        color: var(--text-primary);
+        border-color: var(--accent-purple);
+        box-shadow: 0 0 0 0.25rem rgba(139, 92, 246, 0.25);
+    }
+
+    .custom-label {
+        color: var(--text-secondary);
+        font-size: 0.9rem;
+        margin-bottom: 6px;
+    }
+
+    .select-highlight {
+        background-color: #141625 !important;
+        border: 1px solid rgba(139, 92, 246, 0.4) !important;
+        color: #f3f4f6 !important;
+        border-radius: 8px;
+        padding: 10px 36px 10px 12px;
+        font-weight: 500;
+        cursor: pointer;
+        background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%238b5cf6' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e") !important;
+        background-repeat: no-repeat !important;
+        background-position: right 12px center !important;
+        background-size: 16px 12px !important;
+        appearance: none;
+        -webkit-appearance: none;
+        -moz-appearance: none;
+        box-shadow: 0 0 12px rgba(139, 92, 246, 0.15);
+        transition: all 0.2s ease-in-out;
+    }
+
+    .select-highlight:hover {
+        border-color: rgba(139, 92, 246, 0.8) !important;
+        box-shadow: 0 0 15px rgba(139, 92, 246, 0.25);
+        background-color: #1a1d33 !important;
+    }
+
+    .select-highlight:focus {
+        border-color: var(--accent-purple) !important;
+        box-shadow: 0 0 0 0.25rem rgba(139, 92, 246, 0.3) !important;
+        outline: none;
+    }
+
+    .select-highlight option {
+        background-color: #141625 !important;
+        color: #f3f4f6 !important;
+    }
+</style>
+
+<div class="container-fluid py-4">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="fw-extrabold mb-1"><span class="gradient-text">DNSE AI Copilot</span></h1>
+            <p class="text-secondary m-0">Hệ thống AI cố vấn giao dịch & Tự tích lũy kinh nghiệm</p>
+        </div>
+        <div class="d-flex gap-3 align-items-center">
+            <div class="glass-card py-2 px-3 text-end" style="font-size: 0.85rem;">
+                <div class="fw-bold text-white">
+                    Nguyễn Đức An 
+                    @if (!string.IsNullOrEmpty(pref.DnseUsername))
+                    {
+                        <span class="badge bg-success ms-1" style="font-size: 0.65rem; padding: 3px 6px; border-radius: 4px; vertical-align: middle;">🟢 Đang kết nối</span>
+                    }
+                    else
+                    {
+                        <span class="badge bg-danger ms-1" style="font-size: 0.65rem; padding: 3px 6px; border-radius: 4px; vertical-align: middle;">🔴 Chưa kết nối</span>
+                    }
+                </div>
+                <div class="text-secondary" style="font-size: 0.75rem;">
+                    Mã KH DNSE: @(string.IsNullOrEmpty(pref.DnseUsername) ? "Chưa liên kết" : pref.DnseUsername)
+                </div>
+            </div>
+            <div class="glass-card py-2 px-3 d-flex align-items-center gap-2">
+                <span class="text-secondary text-xs">Floating PnL:</span>
+                <span class="fw-bold @(totalPnL >= 0 ? "text-success" : "text-danger")">
+                    @(totalPnL >= 0 ? "+" : "")@totalPnL.ToString("N0") VND
+                </span>
+            </div>
+            <form asp-action="SyncDnse" method="post" style="margin: 0;">
+                <button type="submit" class="btn btn-outline-info d-flex align-items-center gap-2" style="border-radius: 10px; padding: 10px 15px;">
+                    🔄 Đồng bộ DNSE
+                </button>
+            </form>
+        </div>
+    </div>
+
+    @if (TempData["SuccessMessage"] != null)
+    {
+        <div class="alert alert-success bg-opacity-10 border-success text-success alert-dismissible fade show mb-4" role="alert">
+            @TempData["SuccessMessage"]
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    }
+
+    @if (TempData["ErrorMessage"] != null)
+    {
+        <div class="alert alert-danger bg-opacity-10 border-danger text-danger alert-dismissible fade show mb-4" role="alert">
+            @TempData["ErrorMessage"]
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    }
+
+    <div class="row g-4">
+        <!-- Dashboard chính: Tín hiệu & Biểu đồ -->
+        <div class="col-12">
+            <div class="row g-4">
+                <!-- Biểu đồ đánh giá hiệu suất -->
+                <div class="col-lg-12">
+                    <div class="glass-card">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h3 class="h5 m-0 fw-bold text-white">📈 Biểu đồ Đánh giá Hiệu suất</h3>
+                            <div class="d-flex gap-2">
+                                <a asp-action="Portfolio" class="btn btn-sm btn-outline-info">Xem chi tiết Danh mục</a>
+                                <a asp-action="Account" class="btn btn-sm btn-outline-secondary">Cài đặt mục tiêu</a>
+                            </div>
+                        </div>
+                        <div style="height: 250px;">
+                            <canvas id="performanceChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Danh sách cổ phiếu khả dụng trên DNSE -->
+                <div class="col-12">
+                    <div class="glass-card">
+                        <h3 class="h5 mb-3 fw-bold text-white">⚡ Cổ phiếu khả dụng trên DNSE</h3>
+                        <div class="table-responsive">
+                            <table class="table table-dark table-hover align-middle border-0 m-0">
+                                <thead>
+                                    <tr class="text-secondary border-bottom border-secondary" style="font-size: 0.85rem;">
+                                        <th>MÃ</th>
+                                        <th>TÊN CÔNG TY</th>
+                                        <th class="text-end">GIÁ HIỆN TẠI</th>
+                                        <th class="text-end">TĂNG/GIẢM</th>
+                                        <th class="text-center">CHỈ BÁO RSI</th>
+                                        <th class="text-center">HÀNH ĐỘNG AI</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var stock in stocks)
+                                    {
+                                        <tr>
+                                            <td class="fw-bold">@stock.Symbol</td>
+                                            <td class="text-secondary" style="font-size: 0.9rem;">@stock.CompanyName</td>
+                                            <td class="text-end fw-bold">@stock.CurrentPrice.ToString("N0") đ</td>
+                                            <td class="text-end">
+                                                <span class="stock-badge @(stock.ChangePercentage >= 0 ? "badge-up" : "badge-down")">
+                                                    @(stock.ChangePercentage >= 0 ? "+" : "")@stock.ChangePercentage%
+                                                </span>
+                                            </td>
+                                            <td class="text-center">
+                                                <span class="badge @(stock.Rsi < 30 ? "bg-success" : stock.Rsi > 70 ? "bg-danger" : "bg-secondary")">
+                                                    @stock.Rsi
+                                                </span>
+                                            </td>
+                                            <td class="text-center">
+                                                <form asp-action="GenerateSignal" method="post" style="display:inline;">
+                                                    <input type="hidden" name="symbol" value="@stock.Symbol" />
+                                                    <button type="submit" class="btn btn-sm btn-outline-primary" style="border-radius: 8px;">
+                                                        💡 Yêu cầu Tín hiệu
+                                                    </button>
+                                                </form>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Log suy nghĩ của AI -->
+    <div class="row g-4 mt-2">
+        <!-- Hộp thoại suy nghĩ của AI (Thought Logs) -->
+        <div class="col-lg-12">
+            <div class="glass-card d-flex flex-column" style="height: 100%;">
+                <h3 class="h5 mb-3 fw-bold text-white d-flex align-items-center gap-2">
+                    <span class="text-warning">🧠</span> Nhật ký suy nghĩ của Copilot (RAG Memory)
+                </h3>
+                <div class="flex-grow-1 bg-black bg-opacity-30 p-3 rounded-3" style="max-height: 260px; overflow-y: auto; font-family: monospace; font-size: 0.85rem; color: #34d399;" id="thoughtLogBox">
+                    @if (ViewBag.ThoughtLogs != null)
+                    {
+                        foreach (var log in (List<string>)ViewBag.ThoughtLogs)
+                        {
+                            var textClass = log.Contains("[Error]") ? "text-danger" : 
+                                            log.Contains("[Warning]") ? "text-warning" : 
+                                            log.Contains("[Info]") ? "text-secondary" : 
+                                            log.Contains("[Tự học]") || log.Contains("[Học máy]") ? "text-info" : "";
+                            <p class="m-0 @textClass">@log</p>
+                        }
+                    }
+                    else
+                    {
+                        <p class="m-0 text-secondary">[System] Đang chờ nhật ký suy nghĩ...</p>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hệ thống Tri thức & Trí nhớ AI (Knowledge & Memory Engines) -->
+    <div class="row g-4 mt-3 mb-4">
+        <!-- 1. CỘT TRÁI: KNOWLEDGE BASE -->
+        <div class="col-lg-6">
+            <div class="glass-card h-100">
+                <h3 class="h5 mb-3 fw-bold text-white d-flex align-items-center gap-2">
+                    <span class="text-info">📚</span> Thư viện Mô hình Giao dịch (Knowledge Base)
+                </h3>
+                <p class="text-secondary" style="font-size: 0.85rem;">
+                    Quy tắc lý thuyết và điều kiện áp dụng để AI đối chiếu trước khi đưa ra tín hiệu.
+                </p>
+                <div class="accordion accordion-flush" id="strategiesAccordion">
+                    @for (int i = 0; i < strategies.Count; i++)
+                    {
+                        var strat = strategies[i];
+                        <div class="accordion-item bg-transparent border-0 border-bottom border-secondary mb-2">
+                            <h2 class="accordion-header" id="heading-@strat.Id">
+                                <button class="accordion-button collapsed bg-transparent text-white fw-bold px-0 py-3 d-flex justify-content-between align-items-center" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-@strat.Id" aria-expanded="false" aria-controls="collapse-@strat.Id" style="box-shadow: none; font-size: 0.9rem;">
+                                    <span>
+                                        @strat.Name 
+                                        <span class="badge bg-secondary stock-badge ms-2" style="font-size: 0.7rem;">@strat.StrategyType</span>
+                                    </span>
+                                </button>
+                            </h2>
+                            <div id="collapse-@strat.Id" class="accordion-collapse collapse" aria-labelledby="heading-@strat.Id" data-bs-parent="#strategiesAccordion">
+                                <div class="accordion-body px-0 py-2 text-secondary" style="font-size: 0.85rem;">
+                                    <div class="mb-2"><strong>Mô tả:</strong> @strat.Description</div>
+                                    <div class="mb-3"><strong>Quy tắc AI:</strong> <span class="text-info">@strat.RuleLogic</span></div>
+                                    
+                                    <div class="mt-2 p-2 rounded" style="background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.05);">
+                                        <div class="text-white mb-2 fw-semibold" style="font-size: 0.8rem;">📊 Mô phỏng mô hình giao dịch:</div>
+                                        <div style="height: 150px; position: relative;">
+                                            <canvas id="strategyChart-@strat.Id"></canvas>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <!-- 2. CỘT PHẢI: MEMORY ENGINE -->
+        <div class="col-lg-6">
+            <div class="glass-card h-100">
+                <h3 class="h5 mb-3 fw-bold text-white d-flex align-items-center gap-2">
+                    <span class="text-success">🧠</span> Trí nhớ Trải nghiệm & Bài học (Memory Engine)
+                </h3>
+                <p class="text-secondary" style="font-size: 0.85rem;">
+                    Các bài học thực tế được sinh ra bởi Critic Agent sau mỗi giao dịch đã đóng để nâng cấp trí tuệ AI.
+                </p>
+                
+                <div style="max-height: 300px; overflow-y: auto; padding-right: 5px;">
+                    @{
+                        var episodes = ViewBag.Episodes as List<AITradingSystem.Models.TradeEpisode> ?? new List<AITradingSystem.Models.TradeEpisode>();
+                    }
+                    @if (!episodes.Any())
+                    {
+                        <div class="text-center text-secondary py-5" style="font-size: 0.9rem;">
+                            Chưa có trí nhớ trải nghiệm nào. AI sẽ tự động đúc rút bài học khi bạn chốt lời/cắt lỗ (Bán) các vị thế đang nắm giữ.
+                        </div>
+                    }
+                    else
+                    {
+                        foreach (var ep in episodes)
+                        {
+                            <div class="p-3 mb-3 rounded border" style="background: rgba(255,255,255,0.02); border-color: rgba(255,255,255,0.05) !important;">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <span class="fw-bold text-white" style="font-size: 0.9rem;">@ep.ActionTaken</span>
+                                    <span class="badge @(ep.Result.Contains("LÃI") ? "bg-success" : "bg-danger")" style="font-size: 0.75rem;">
+                                        @ep.Result
+                                    </span>
+                                </div>
+                                <div class="text-secondary mb-2" style="font-size: 0.8rem;">
+                                    <strong>Bối cảnh:</strong> @ep.MarketContext
+                                </div>
+                                <div class="p-2 rounded font-monospace text-warning" style="background: rgba(252, 211, 77, 0.05); font-size: 0.8rem; border-left: 3px solid #fbbf24;">
+                                    💡 @ep.LessonLearned
+                                </div>
+                                <div class="text-end text-muted mt-1" style="font-size: 0.7rem;">
+                                    @ep.Timestamp.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
+                                </div>
+                            </div>
+                        }
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // ========================
+    // BIỂU ĐỒ HIỆU SUẤT - Logic hợp nhất (Không tạo chart 2 lần)
+    // ========================
+    const performanceCanvas = document.getElementById('performanceChart');
+    const openPositionsForChart = @chartPositions.Any().ToString().ToLowerInvariant();
+
+    if (openPositionsForChart) {
+        // CÓ vị thế đang mở -> Biểu đồ BAR + LINE combo hiệu suất từng mã
+        const performanceLabels = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(positionLabels));
+        const performanceProgress = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(positionProgress));
+        const performancePnL = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(positionPnL));
+        const performanceInvested = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(positionInvested));
+
+        new Chart(performanceCanvas.getContext('2d'), {
+            type: 'bar',
+            data: {
+                labels: performanceLabels,
+                datasets: [{
+                    label: 'Tiến độ đạt mục tiêu (%)',
+                    data: performanceProgress,
+                    backgroundColor: 'rgba(139, 92, 246, 0.55)',
+                    borderColor: '#8b5cf6',
+                    borderWidth: 1,
+                    borderRadius: 8
+                }, {
+                    label: 'Lãi/lỗ tạm tính (đ)',
+                    data: performancePnL,
+                    type: 'line',
+                    borderColor: '#10b981',
+                    backgroundColor: 'rgba(16, 185, 129, 0.12)',
+                    borderWidth: 3,
+                    tension: 0.35,
+                    yAxisID: 'yPnL'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        labels: {
+                            color: '#9ca3af',
+                            font: { family: 'Plus Jakarta Sans' }
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            afterBody: function(context) {
+                                const index = context[0].dataIndex;
+                                const invested = performanceInvested[index] ?? 0;
+                                return 'Nguồn đầu tư cố định: ' + Number(invested).toLocaleString('en-US') + ' đ';
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                        ticks: { color: '#9ca3af' },
+                        title: { display: true, text: 'Tiến độ (%)', color: '#9ca3af' }
+                    },
+                    yPnL: {
+                        position: 'right',
+                        grid: { display: false },
+                        ticks: { color: '#9ca3af' },
+                        title: { display: true, text: 'Lãi/lỗ (đ)', color: '#9ca3af' }
+                    },
+                    x: {
+                        grid: { display: false },
+                        ticks: { color: '#9ca3af' }
+                    }
+                }
+            }
+        });
+    } else {
+        // KHÔNG có vị thế -> Biểu đồ LINE tổng quan vốn vs mục tiêu
+        const amountPerTrade = @((long)pref.AmountPerTrade);
+        const targetAmount = @((long)pref.TargetAmount);
+        const totalPnL = @((long)totalPnL);
+
+        const targetData = [];
+        const stepTarget = (targetAmount - amountPerTrade) / 5;
+        for (let i = 0; i < 6; i++) {
+            targetData.push(Math.round(amountPerTrade + stepTarget * i));
+        }
+
+        const currentActualCapital = amountPerTrade + totalPnL;
+        const actualData = [
+            amountPerTrade,
+            Math.round(amountPerTrade + (currentActualCapital - amountPerTrade) * 0.15 + (Math.random() - 0.5) * amountPerTrade * 0.01),
+            Math.round(amountPerTrade + (currentActualCapital - amountPerTrade) * 0.45 + (Math.random() - 0.5) * amountPerTrade * 0.015),
+            Math.round(amountPerTrade + (currentActualCapital - amountPerTrade) * 0.35 + (Math.random() - 0.5) * amountPerTrade * 0.01),
+            Math.round(amountPerTrade + (currentActualCapital - amountPerTrade) * 0.75 + (Math.random() - 0.5) * amountPerTrade * 0.02),
+            currentActualCapital
+        ];
+
+        new Chart(performanceCanvas.getContext('2d'), {
+            type: 'line',
+            data: {
+                labels: ['Tuần 1', 'Tuần 2', 'Tuần 3', 'Tuần 4', 'Tuần 5', 'Tuần 6'],
+                datasets: [{
+                    label: 'Tài sản thực tế (VND)',
+                    data: actualData,
+                    borderColor: '#8b5cf6',
+                    backgroundColor: 'rgba(139, 92, 246, 0.1)',
+                    borderWidth: 3,
+                    fill: true,
+                    tension: 0.4
+                }, {
+                    label: 'Đường mục tiêu (VND)',
+                    data: targetData,
+                    borderColor: 'rgba(255, 255, 255, 0.2)',
+                    borderWidth: 1,
+                    borderDash: [5, 5],
+                    fill: false,
+                    tension: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        labels: {
+                            color: '#9ca3af',
+                            font: { family: 'Plus Jakarta Sans' }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                        ticks: { color: '#9ca3af' }
+                    },
+                    x: {
+                        grid: { display: false },
+                        ticks: { color: '#9ca3af' }
+                    }
+                }
+            }
+        });
+    }
+
+    // Cuộn log suy nghĩ xuống cuối
+    const logBox = document.getElementById("thoughtLogBox");
+    if (logBox) {
+        logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    // Quản lý các biểu đồ chiến lược (Knowledge Base)
+    const strategyCharts = {};
+
+    function initStrategyChart(strategyId, strategyName) {
+        const canvasId = `strategyChart-${strategyId}`;
+        const canvasEl = document.getElementById(canvasId);
+        if (!canvasEl) return;
+
+        if (strategyCharts[strategyId]) {
+            strategyCharts[strategyId].destroy();
+        }
+
+        const ctx2 = canvasEl.getContext('2d');
+        let chartData = {};
+
+        if (strategyName.includes("RSI")) {
+            chartData = {
+                labels: ['N-10', 'N-9', 'N-8', 'N-7', 'N-6', 'N-5', 'N-4', 'N-3', 'N-2', 'N-1', 'Hiện tại'],
+                datasets: [
+                    {
+                        label: 'Chỉ số RSI',
+                        data: [45, 52, 60, 48, 32, 22, 28, 38, 45, 68, 72],
+                        borderColor: '#a78bfa',
+                        backgroundColor: 'rgba(167, 139, 250, 0.05)',
+                        borderWidth: 2,
+                        tension: 0.3,
+                        pointBackgroundColor: function(context) {
+                            var index = context.dataIndex;
+                            if (index === 5) return '#10b981';
+                            if (index === 10) return '#ef4444';
+                            return '#8b5cf6';
+                        },
+                        pointRadius: function(context) {
+                            var index = context.dataIndex;
+                            if (index === 5 || index === 10) return 6;
+                            return 3;
+                        }
+                    },
+                    { label: 'Quá bán (30)', data: Array(11).fill(30), borderColor: '#10b981', borderWidth: 1.5, borderDash: [4, 4], fill: false, pointRadius: 0 },
+                    { label: 'Quá mua (70)', data: Array(11).fill(70), borderColor: '#ef4444', borderWidth: 1.5, borderDash: [4, 4], fill: false, pointRadius: 0 }
+                ]
+            };
+        } else if (strategyName.includes("MACD")) {
+            chartData = {
+                labels: ['N-10', 'N-9', 'N-8', 'N-7', 'N-6', 'N-5', 'N-4', 'N-3', 'N-2', 'N-1', 'Hiện tại'],
+                datasets: [
+                    {
+                        label: 'Đường MACD',
+                        data: [-0.8, -0.6, -0.4, -0.1, 0.2, 0.4, 0.5, 0.3, 0.1, -0.1, -0.3],
+                        borderColor: '#3b82f6', borderWidth: 2, tension: 0.2,
+                        pointBackgroundColor: function(context) { return context.dataIndex === 3 ? '#10b981' : context.dataIndex === 8 ? '#ef4444' : '#3b82f6'; },
+                        pointRadius: function(context) { return (context.dataIndex === 3 || context.dataIndex === 8) ? 6 : 2; }
+                    },
+                    { label: 'Đường Tín Hiệu (Signal)', data: [-0.6, -0.5, -0.4, -0.3, -0.1, 0.1, 0.3, 0.3, 0.2, 0.1, -0.05], borderColor: '#f59e0b', borderWidth: 2, borderDash: [2, 2], tension: 0.2, pointRadius: 0 }
+                ]
+            };
+        } else if (strategyName.includes("Hai đáy") || strategyName.includes("Double Bottom")) {
+            chartData = {
+                labels: ['Bắt đầu', 'Đáy 1', 'Đường viền cổ', 'Đáy 2', 'Bứt phá', 'Mục tiêu'],
+                datasets: [
+                    {
+                        label: 'Đường giá', data: [100, 80, 92, 81, 102, 115], borderColor: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.05)', borderWidth: 2.5, tension: 0.15,
+                        pointBackgroundColor: function(context) { return context.dataIndex === 4 ? '#10b981' : '#3b82f6'; },
+                        pointRadius: function(context) { return context.dataIndex === 4 ? 8 : 4; }
+                    },
+                    { label: 'Đường viền cổ (Neckline)', data: [92, 92, 92, 92, 92, 92], borderColor: 'rgba(255, 255, 255, 0.2)', borderWidth: 1.5, borderDash: [4, 4], fill: false, pointRadius: 0 }
+                ]
+            };
+        } else {
+            chartData = {
+                labels: ['N-8', 'N-7', 'N-6', 'N-5', 'N-4', 'N-3', 'N-2', 'N-1', 'Hiện tại'],
+                datasets: [
+                    {
+                        label: 'Đường giá', data: [50.5, 49.8, 50.1, 49.5, 50.2, 51.5, 53.0, 56.5, 59.0], borderColor: '#a78bfa', borderWidth: 2.5, tension: 0.2,
+                        pointBackgroundColor: function(context) { return context.dataIndex === 6 ? '#10b981' : '#8b5cf6'; },
+                        pointRadius: function(context) { return context.dataIndex === 6 ? 8 : 3; }
+                    },
+                    { label: 'Dải trên (Upper Band)', data: [54, 53.5, 52.8, 51.8, 51.2, 51.8, 52.5, 54.0, 56.0], borderColor: 'rgba(59, 130, 246, 0.4)', borderWidth: 1.5, fill: false, pointRadius: 0 },
+                    { label: 'Dải dưới (Lower Band)', data: [46, 46.5, 47.2, 47.8, 48.0, 47.8, 47.0, 45.0, 43.0], borderColor: 'rgba(59, 130, 246, 0.4)', borderWidth: 1.5, fill: false, pointRadius: 0 }
+                ]
+            };
+        }
+
+        strategyCharts[strategyId] = new Chart(ctx2, {
+            type: 'line', data: chartData,
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { display: true, labels: { color: '#9ca3af', font: { family: 'Plus Jakarta Sans', size: 9 } } } },
+                scales: {
+                    y: { grid: { color: 'rgba(255, 255, 255, 0.03)' }, ticks: { color: '#6b7280', font: { size: 9 } } },
+                    x: { grid: { display: false }, ticks: { color: '#6b7280', font: { size: 9 } } }
+                }
+            }
+        });
+    }
+
+    // Lắng nghe sự kiện mở rộng của Accordion
+    const accordionEl = document.getElementById('strategiesAccordion');
+    if (accordionEl) {
+        accordionEl.addEventListener('shown.bs.collapse', function (event) {
+            const collapseId = event.target.id;
+            const strategyId = collapseId.replace('collapse-', '');
+            const buttonEl = document.querySelector(`[data-bs-target="#${collapseId}"]`);
+            const strategyName = buttonEl ? buttonEl.innerText : "";
+            initStrategyChart(strategyId, strategyName);
+        });
+    }
+
+    // Format input số tiền có dấu phẩy khi nhập
+    function setupCommaFormatting(displayInputId, hiddenInputId) {
+        const displayInput = document.getElementById(displayInputId);
+        const hiddenInput = document.getElementById(hiddenInputId);
+        if (!displayInput || !hiddenInput) return;
+        function formatValue(val) { let clean = val.toString().replace(/\D/g, ''); return clean ? parseInt(clean, 10).toLocaleString('en-US') : ''; }
+        if (displayInput.value) { displayInput.value = formatValue(displayInput.value); }
+        displayInput.addEventListener('input', function(e) {
+            let cursorPosition = displayInput.selectionStart;
+            let originalLength = displayInput.value.length;
+            let cleanVal = displayInput.value.replace(/\D/g, '');
+            hiddenInput.value = cleanVal;
+            let formattedVal = cleanVal ? parseInt(cleanVal, 10).toLocaleString('en-US') : '';
+            displayInput.value = formattedVal;
+            let newLength = formattedVal.length;
+            let diff = newLength - originalLength;
+            let newCursorPosition = Math.max(0, cursorPosition + diff);
+            displayInput.setSelectionRange(newCursorPosition, newCursorPosition);
+        });
+        displayInput.addEventListener('blur', function() { if (!displayInput.value) { hiddenInput.value = '0'; } });
+    }
+    setupCommaFormatting('AmountPerTradeDisplay', 'AmountPerTrade');
+    setupCommaFormatting('TargetAmountDisplay', 'TargetAmount');
+</script>

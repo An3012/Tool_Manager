@@ -1,0 +1,72 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            // Use IntelliSense to find out which attributes exist for C# debugging
+            // Use hover for the description of the existing attributes
+            // For further information visit https://github.com/dotnet/vscode-csharp/blob/main/debugger-launchjson.md.
+            "name": ".NET Core Launch (web)",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build",
+            // If you have changed target frameworks, make sure to update the program path.
+            "program": "${workspaceFolder}/AITradingSystem/bin/Debug/net9.0/AITradingSystem.dll",
+            "args": [],
+            "cwd": "${workspaceFolder}/AITradingSystem",
+            "stopAtEntry": false,
+            // Enable launching a web browser when ASP.NET Core starts. For more information: https://aka.ms/VSCode-CS-LaunchJson-WebBrowser
+            "serverReadyAction": {
+                "action": "openExternally",
+                "pattern": "\\bNow listening on:\\s+(https?://\\S+)"
+            },
+            "env": {
+                "ASPNETCORE_ENVIRONMENT": "Development"
+            },
+            "sourceFileMap": {
+                "/Views": "${workspaceFolder}/Views"
+            }
+        },
+        {
+            "name": ".NET Core Attach",
+            "type": "coreclr",
+            "request": "attach"
+        },
+        {
+            "name": "Python: Debug DNSE Scraper (Nhập tài khoản/mật khẩu)",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/AITradingSystem/dnse_scraper.py",
+            "args": [
+                "${input:dnseUsername}",
+                "${input:dnsePassword}"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
+            "name": "Python: Debug DNSE Scraper (Điền sẵn)",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/AITradingSystem/dnse_scraper.py",
+            "args": [
+                "TÊN_ĐĂNG_NHẬP_CỦA_BẠN",
+                "MẬT_KHẨU_CỦA_BẠN"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": true
+        }
+    ],
+    "inputs": [
+        {
+            "id": "dnseUsername",
+            "type": "promptString",
+            "description": "Nhập tài khoản DNSE của bạn"
+        },
+        {
+            "id": "dnsePassword",
+            "type": "promptString",
+            "description": "Nhập mật khẩu DNSE của bạn",
+            "password": true
+        }
+    ]
+}
