@@ -28,6 +28,9 @@ namespace AITradingSystem.Models
         // Số tiền cắt lỗ mong muốn cho mỗi lệnh (VND)
         public decimal StopLossAmount { get; set; }
 
+        // Ngày bắt đầu kế hoạch đầu tư
+        public DateTime? PlanStartDate { get; set; }
+
         // Sở thích rủi ro (Low, Medium, High)
         public string RiskTolerance { get; set; } = "Medium";
 

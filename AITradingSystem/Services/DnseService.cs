@@ -1,18 +1,18 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
-using Microsoft.Extensions.Configuration;
-using AITradingSystem.Models;
-using AITradingSystem.Data;
-using Microsoft.EntityFrameworkCore;
-using System.Linq;
 using AITradingSystem.Controllers;
-using System.Collections.Generic;
+using AITradingSystem.Data;
+using AITradingSystem.Models;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 
 namespace AITradingSystem.Services
 {
@@ -351,6 +351,118 @@ namespace AITradingSystem.Services
                     }
 
                     await _context.SaveChangesAsync();
+
+
+                    // // === IMPORT DETAILED TRANSACTIONS (PHASE 3) ===
+                    // string transactionsJsonPath = Path.Combine(appBaseDir, "dnse_transactions.json");
+                    // if (File.Exists(transactionsJsonPath))
+                    // {
+                    //     try
+                    //     {
+                    //         string txJsonContent = await File.ReadAllTextAsync(transactionsJsonPath);
+                    //         try { File.Delete(transactionsJsonPath); } catch (Exception ex) { Console.WriteLine($"Không thể xóa transactions JSON sau khi đọc: {ex.Message}"); }
+
+                    //         using var txDoc = JsonDocument.Parse(txJsonContent);
+                    //         if (txDoc.RootElement.ValueKind == JsonValueKind.Array)
+                    //         {
+                    //             int importCount = 0;
+                    //             foreach (var tx in txDoc.RootElement.EnumerateArray())
+                    //             {
+                    //                 string symbol = tx.TryGetProperty("Symbol", out var sProp) ? sProp.GetString() ?? "" : "";
+                    //                 string typeText = tx.TryGetProperty("Type", out var tProp) ? tProp.GetString() ?? "" : "";
+                    //                 int qty = tx.TryGetProperty("Qty", out var qProp) ? qProp.GetInt32() : 0;
+                    //                 decimal price = tx.TryGetProperty("Price", out var pProp) ? pProp.GetDecimal() : 0m;
+                    //                 string dateText = tx.TryGetProperty("Date", out var dProp) ? dProp.GetString() ?? "" : "";
+                    //                 decimal fee = tx.TryGetProperty("Fee", out var fProp) ? fProp.GetDecimal() : 0m;
+                    //                 decimal tax = tx.TryGetProperty("Tax", out var taxProp) ? taxProp.GetDecimal() : 0m;
+
+                    //                 if (string.IsNullOrEmpty(symbol) || qty <= 0 || price <= 0) continue;
+
+                    //                 DateTime txDate = DateTime.Now;
+                    //                 if (DateTime.TryParseExact(dateText.Trim(), new[] { "dd/MM/yyyy HH:mm:ss", "dd/MM/yyyy" }, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var parsedDate))
+                    //                 {
+                    //                     txDate = parsedDate;
+                    //                 }
+
+                    //                 // UPSERT StockTransaction
+                    //                 var existingTx = await _context.StockTransactions
+                    //                     .FirstOrDefaultAsync(t => t.Symbol == symbol 
+                    //                                               && t.TransactionType == typeText 
+                    //                                               && t.Quantity == qty 
+                    //                                               && t.Price == price 
+                    //                                               && t.TransactionDate == txDate);
+
+                    //                 if (existingTx == null)
+                    //                 {
+                    //                     // Link to position if possible
+                    //                     var position = await _context.TradePositions
+                    //                         .FirstOrDefaultAsync(p => p.Symbol == symbol && p.Status == "OPEN" && !p.IsAiTrade);
+
+                    //                     _context.StockTransactions.Add(new StockTransaction
+                    //                     {
+                    //                         Symbol = symbol,
+                    //                         TransactionType = typeText,
+                    //                         Quantity = qty,
+                    //                         Price = price,
+                    //                         TransactionDate = txDate,
+                    //                         Fee = fee,
+                    //                         TotalAmount = qty * price,
+                    //                         PnlAmount = typeText == "SELL" ? (qty * price) - (qty * (position?.EntryPrice ?? price)) - fee - tax : null,
+                    //                         Source = "DNSE",
+                    //                         PositionId = position?.Id,
+                    //                         Notes = "Imported from DNSE Order History"
+                    //                     });
+                    //                     importCount++;
+                    //                 }
+                    //             }
+
+                    //             if (importCount > 0)
+                    //             {
+                    //                 // Tính toán PriceHighSinceBuy / PriceLowSinceBuy / TimingScore cho các lệnh SELL vừa import
+                    //                 var allTxs = await _context.StockTransactions.ToListAsync();
+                    //                 var combinedTxs = allTxs.Concat(_context.StockTransactions.Local).ToList();
+                    //                 foreach (var tx in _context.StockTransactions.Local)
+                    //                 {
+                    //                     if (tx.TransactionType == "SELL" && (!tx.PriceHighSinceBuy.HasValue || tx.PriceHighSinceBuy == 0))
+                    //                     {
+                    //                         // Tìm lệnh BUY gần nhất trước lệnh SELL này
+                    //                         var matchingBuy = combinedTxs
+                    //                             .Where(t => t.Symbol == tx.Symbol && t.TransactionType == "BUY" && t.TransactionDate < tx.TransactionDate)
+                    //                             .OrderByDescending(t => t.TransactionDate)
+                    //                             .FirstOrDefault();
+
+                    //                         var buyDate = matchingBuy?.TransactionDate ?? tx.TransactionDate.AddDays(-30);
+                    //                         var (high, low) = await GetHighLowPricesAsync(tx.Symbol, buyDate, tx.TransactionDate);
+
+                    //                         if (high > 0 && low > 0)
+                    //                         {
+                    //                             tx.PriceHighSinceBuy = high;
+                    //                             tx.PriceLowSinceBuy = low;
+
+                    //                             if (high > low)
+                    //                             {
+                    //                                 var score = (tx.Price - low) / (high - low) * 100m;
+                    //                                 tx.TimingScore = Math.Round(Math.Clamp(score, 0m, 100m), 2);
+                    //                             }
+                    //                             else
+                    //                             {
+                    //                                 tx.TimingScore = 100m;
+                    //                             }
+                    //                         }
+                    //                     }
+                    //                 }
+
+                    //                 await _context.SaveChangesAsync();
+                    //                 Console.WriteLine($"[DNSE Sync] Đã nhập {importCount} giao dịch chi tiết mới vào DB (đã tính timing score).");
+                    //             }
+                    //         }
+                    //     }
+                    //     catch (Exception txEx)
+                    //     {
+                    //         Console.WriteLine($"[DNSE Sync] Lỗi khi import chi tiết giao dịch: {txEx.Message}");
+                    //     }
+                    // }
+                    
                     return true;
                 }
 

@@ -134,16 +134,10 @@
                         </div>
                     </div>
 
-                    <div class="section-title">Thiết lập nâng cao</div>
-
                     <div class="row g-3">
-                        <div class="col-md-6">
-                            <label class="custom-label">% Lợi nhuận kỳ vọng</label>
-                            <input type="number" name="TargetProfitPercentage" value="@pref.TargetProfitPercentage" class="form-control custom-input" step="0.5" min="0" />
-                        </div>
-                        <div class="col-md-6">
-                            <label class="custom-label">% Cắt lỗ tối đa</label>
-                            <input type="number" name="MaxLossPercentage" value="@pref.MaxLossPercentage" class="form-control custom-input" step="0.5" min="0" />
+                        <div class="col-md-12">
+                            <label class="custom-label">Ngày bắt đầu kế hoạch</label>
+                            <input type="date" name="PlanStartDate" value="@(pref.PlanStartDate?.ToString("yyyy-MM-dd") ?? DateTime.Now.ToString("yyyy-MM-dd"))" class="form-control custom-input" />
                         </div>
                     </div>
 

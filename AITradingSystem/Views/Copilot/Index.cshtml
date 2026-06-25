@@ -27,6 +27,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 <!-- Chart.js -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<!-- TradingView Lightweight Charts -->
+<script src="https://unpkg.com/lightweight-charts@4.2.1/dist/lightweight-charts.standalone.production.js"></script>
 
 <style>
     :root {
@@ -156,6 +158,43 @@
         background-color: #141625 !important;
         color: #f3f4f6 !important;
     }
+    /* Stock Detail Board Styling */
+    .text-purple { color: #d946ef !important; }
+    .text-cyan { color: #06b6d4 !important; }
+    .text-yellow { color: #eab308 !important; }
+    .text-green { color: #10b981 !important; }
+    .text-red { color: #ef4444 !important; }
+
+    .depth-bar {
+        position: absolute;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        height: 100%;
+        z-index: 1;
+        transition: width 0.3s ease;
+    }
+    .ask-depth {
+        background-color: rgba(239, 68, 68, 0.12);
+    }
+    .bid-depth {
+        background-color: rgba(16, 185, 129, 0.12);
+    }
+    .match-row td {
+        padding-top: 6px !important;
+        padding-bottom: 6px !important;
+    }
+    .watchlist-row {
+        cursor: pointer;
+        transition: background-color 0.2s;
+    }
+    .watchlist-row:hover {
+        background-color: rgba(255, 255, 255, 0.05) !important;
+    }
+    .watchlist-row.active-stock {
+        background-color: rgba(139, 92, 246, 0.18) !important;
+        border-left: 3px solid var(--accent-purple) !important;
+    }
 </style>
 
 <div class="container-fluid py-4">
@@ -182,17 +221,29 @@
                     Mã KH DNSE: @(string.IsNullOrEmpty(pref.DnseUsername) ? "Chưa liên kết" : pref.DnseUsername)
                 </div>
             </div>
-            <div class="glass-card py-2 px-3 d-flex align-items-center gap-2">
-                <span class="text-secondary text-xs">Floating PnL:</span>
+            <div class="glass-card py-2 px-3 d-flex align-items-center gap-2" style="font-size: 0.85rem;">
+                <span class="text-secondary">Lãi tạm tính:</span>
                 <span class="fw-bold @(totalPnL >= 0 ? "text-success" : "text-danger")">
-                    @(totalPnL >= 0 ? "+" : "")@totalPnL.ToString("N0") VND
+                    @(totalPnL >= 0 ? "+" : "")@totalPnL.ToString("N0") đ
                 </span>
             </div>
-            <form asp-action="SyncDnse" method="post" style="margin: 0;">
-                <button type="submit" class="btn btn-outline-info d-flex align-items-center gap-2" style="border-radius: 10px; padding: 10px 15px;">
-                    🔄 Đồng bộ DNSE
-                </button>
-            </form>
+            @{
+                var cumulativePnL = (decimal?)ViewBag.CumulativePnL ?? 0;
+            }
+            <div class="glass-card py-2 px-3 d-flex align-items-center gap-2" style="font-size: 0.85rem; border-color: rgba(139, 92, 246, 0.3);">
+                <span class="text-secondary">Lợi nhuận tích lũy:</span>
+                <span class="fw-bold @(cumulativePnL >= 0 ? "text-success" : "text-danger")">
+                    @(cumulativePnL >= 0 ? "+" : "")@cumulativePnL.ToString("N0") đ
+                </span>
+            </div>
+            <div class="d-flex gap-2">
+                <form asp-action="SyncDnse" method="post" style="margin: 0;">
+                    <button type="submit" class="btn btn-outline-info d-flex align-items-center gap-2" style="border-radius: 10px; padding: 10px 15px;">
+                        🔄 Đồng bộ DNSE
+                    </button>
+                </form>
+                <a asp-action="MachineLearning" class="btn btn-gradient d-flex align-items-center" style="border-radius: 10px; padding: 10px 15px;">🤖 ML Self-Learning</a>
+            </div>
         </div>
     </div>
 
@@ -212,10 +263,10 @@
         </div>
     }
 
-    <div class="row g-4">
+    <div class="row g-3">
         <!-- Dashboard chính: Tín hiệu & Biểu đồ -->
         <div class="col-12">
-            <div class="row g-4">
+            <div class="row g-3">
                 <!-- Biểu đồ đánh giá hiệu suất -->
                 <div class="col-lg-12">
                     <div class="glass-card">
@@ -232,51 +283,177 @@
                     </div>
                 </div>
 
-                <!-- Danh sách cổ phiếu khả dụng trên DNSE -->
+                <!-- Watchlist và Chi tiết cổ phiếu (Split-Screen) -->
                 <div class="col-12">
-                    <div class="glass-card">
-                        <h3 class="h5 mb-3 fw-bold text-white">⚡ Cổ phiếu khả dụng trên DNSE</h3>
-                        <div class="table-responsive">
-                            <table class="table table-dark table-hover align-middle border-0 m-0">
-                                <thead>
-                                    <tr class="text-secondary border-bottom border-secondary" style="font-size: 0.85rem;">
-                                        <th>MÃ</th>
-                                        <th>TÊN CÔNG TY</th>
-                                        <th class="text-end">GIÁ HIỆN TẠI</th>
-                                        <th class="text-end">TĂNG/GIẢM</th>
-                                        <th class="text-center">CHỈ BÁO RSI</th>
-                                        <th class="text-center">HÀNH ĐỘNG AI</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    @foreach (var stock in stocks)
-                                    {
-                                        <tr>
-                                            <td class="fw-bold">@stock.Symbol</td>
-                                            <td class="text-secondary" style="font-size: 0.9rem;">@stock.CompanyName</td>
-                                            <td class="text-end fw-bold">@stock.CurrentPrice.ToString("N0") đ</td>
-                                            <td class="text-end">
-                                                <span class="stock-badge @(stock.ChangePercentage >= 0 ? "badge-up" : "badge-down")">
-                                                    @(stock.ChangePercentage >= 0 ? "+" : "")@stock.ChangePercentage%
-                                                </span>
-                                            </td>
-                                            <td class="text-center">
-                                                <span class="badge @(stock.Rsi < 30 ? "bg-success" : stock.Rsi > 70 ? "bg-danger" : "bg-secondary")">
-                                                    @stock.Rsi
-                                                </span>
-                                            </td>
-                                            <td class="text-center">
-                                                <form asp-action="GenerateSignal" method="post" style="display:inline;">
-                                                    <input type="hidden" name="symbol" value="@stock.Symbol" />
-                                                    <button type="submit" class="btn btn-sm btn-outline-primary" style="border-radius: 8px;">
-                                                        💡 Yêu cầu Tín hiệu
-                                                    </button>
-                                                </form>
-                                            </td>
-                                        </tr>
-                                    }
-                                </tbody>
-                            </table>
+                    <div class="row g-4">
+                        <!-- CỘT TRÁI (col-lg-4): Watchlist -->
+                        <div class="col-lg-4">
+                            <div class="glass-card h-100 p-2" style="min-height: 570px;">
+                                <div class="d-flex justify-content-between align-items-center mb-3">
+                                    <h3 class="h5 m-0 fw-bold text-white">⚡ Watchlist DNSE</h3>
+                                    <form asp-action="AddWatchlistSymbol" method="post" class="d-flex gap-2">
+                                        <input type="text" name="symbol" class="form-control custom-input py-1 px-2" placeholder="Mã CP..." style="width: 110px; text-transform: uppercase; font-size: 0.8rem;" required />
+                                        <button type="submit" class="btn btn-sm btn-gradient" style="border-radius: 8px; font-size: 0.8rem; padding: 6px 10px;">➕ Thêm</button>
+                                    </form>
+                                </div>
+                                <div class="table-responsive" style="max-height: 570px; overflow-y: auto;">
+                                    <table class="table table-dark table-hover align-middle border-0 m-0">
+                                        <thead>
+                                            <tr class="text-secondary border-bottom border-secondary border-opacity-20" style="font-size: 0.8rem;">
+                                                <th>MÃ</th>
+                                                <th class="text-end">GIÁ HIỆN TẠI</th>
+                                                <th class="text-end">TĂNG/GIẢM</th>
+                                                <th class="text-center">TÍN HIỆU</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="watchlistTableBody">
+                                            @foreach (var stock in stocks)
+                                            {
+                                                var isUp = stock.ChangePercentage >= 0;
+                                                var badgeClass = isUp ? "badge-up" : "badge-down";
+                                                var sign = isUp ? "+" : "";
+                                                var signalBadge = stock.AiSignal == "BUY" 
+                                                    ? "<span class='badge bg-success text-white px-2 py-1' style='font-size: 0.75rem;'>🟢 MUA</span>"
+                                                    : stock.AiSignal == "SELL"
+                                                        ? "<span class='badge bg-danger text-white px-2 py-1' style='font-size: 0.75rem;'>🔴 BÁN</span>"
+                                                        : "<span class='badge bg-secondary text-white px-2 py-1' style='font-size: 0.75rem;'>🟡 THEO DÕI</span>";
+                                                <tr class="watchlist-row" id="row-@stock.Symbol" onclick="selectStock('@stock.Symbol')">
+                                                    <td class="fw-bold">@stock.Symbol <span class="text-secondary" style="font-size: 0.7rem; font-weight: normal;">@stock.Exchange</span></td>
+                                                    <td class="text-end fw-bold" id="price-@stock.Symbol">@stock.CurrentPrice.ToString("N0") đ</td>
+                                                    <td class="text-end" id="change-@stock.Symbol">
+                                                        <span class="stock-badge @badgeClass">
+                                                            @sign@stock.ChangePercentage%
+                                                        </span>
+                                                    </td>
+                                                    <td class="text-center" id="signal-@stock.Symbol">
+                                                        @Html.Raw(signalBadge)
+                                                    </td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- CỘT PHẢI (col-lg-8): Detail Stock (Chart + Order Book) -->
+                        <div class="col-lg-8">
+                            <!-- Bảng trống khi chưa chọn mã -->
+                            <div class="glass-card h-100 d-flex flex-column align-items-center justify-content-center text-center py-5" id="noStockSelected" style="min-height: 520px;">
+                                <div class="text-warning mb-3" style="font-size: 3rem;">📊</div>
+                                <h4 class="text-secondary">Chọn mã cổ phiếu chi tiết</h4>
+                                <p class="text-muted" style="max-width: 300px; font-size: 0.85rem;">Nhấp vào bất kỳ mã cổ phiếu nào trong danh sách bên trái để xem nến OHLC thực tế và Bước giá giao dịch.</p>
+                            </div>
+
+                            <!-- Chi tiết cổ phiếu được hiển thị khi click -->
+                            <div class="glass-card h-100 p-2" id="stockDetailPanel" style="display: none; min-height: 520px;">
+                                <!-- Header thông tin -->
+                                <div class="d-flex justify-content-between align-items-start mb-3">
+                                    <div>
+                                        <div class="d-flex align-items-center gap-2">
+                                            <h3 class="h4 m-0 fw-bold text-white" id="detailSymbol">FPT</h3>
+                                            <span class="badge bg-secondary" id="detailExchange" style="font-size: 0.7rem; padding: 3px 6px;">HOSE</span>
+                                        </div>
+                                        <div class="text-secondary mt-1" id="detailCompanyName" style="font-size: 0.8rem;">CTCP FPT</div>
+                                    </div>
+                                    <div class="text-end">
+                                        <div class="h4 m-0 fw-bold" id="detailPrice">0 đ</div>
+                                        <div class="small fw-semibold mt-1" id="detailChangePct">0.00%</div>
+                                    </div>
+                                </div>
+
+                                <!-- Thanh chỉ số nhanh (Ceiling, Floor, Ref, etc.) -->
+                                <div class="row g-2 mb-3 py-2 px-1 rounded mx-0" style="background: rgba(0,0,0,0.2); border: 1px solid var(--border-color); font-size: 0.75rem;">
+                                    <div class="col-4 col-sm-2 text-center border-end border-secondary border-opacity-10">
+                                        <div class="text-secondary" style="font-size: 0.7rem; margin-bottom: 2px;">Trần</div>
+                                        <div class="fw-bold text-purple" id="statCeiling">0</div>
+                                    </div>
+                                    <div class="col-4 col-sm-2 text-center border-end border-secondary border-opacity-10">
+                                        <div class="text-secondary" style="font-size: 0.7rem; margin-bottom: 2px;">TC</div>
+                                        <div class="fw-bold text-yellow" id="statRef">0</div>
+                                    </div>
+                                    <div class="col-4 col-sm-2 text-center border-end border-secondary border-opacity-10">
+                                        <div class="text-secondary" style="font-size: 0.7rem; margin-bottom: 2px;">Sàn</div>
+                                        <div class="fw-bold text-cyan" id="statFloor">0</div>
+                                    </div>
+                                    <div class="col-4 col-sm-2 text-center border-end border-secondary border-opacity-10">
+                                        <div class="text-secondary" style="font-size: 0.7rem; margin-bottom: 2px;">Cao</div>
+                                        <div class="fw-bold text-green" id="statHigh">0</div>
+                                    </div>
+                                    <div class="col-4 col-sm-2 text-center border-end border-secondary border-opacity-10">
+                                        <div class="text-secondary" style="font-size: 0.7rem; margin-bottom: 2px;">Thấp</div>
+                                        <div class="fw-bold text-red" id="statLow">0</div>
+                                    </div>
+                                    <div class="col-4 col-sm-2 text-center">
+                                        <div class="text-secondary" style="font-size: 0.7rem; margin-bottom: 2px;">Trung bình</div>
+                                        <div class="fw-bold text-yellow" id="statAvg">0</div>
+                                    </div>
+                                </div>
+
+                                <!-- Thân chi tiết: Split Order Book & Candlestick Chart -->
+                                <div class="row g-3">
+                                    <!-- Order Book (Bước giá) -->
+                                    <div class="col-md-5">
+                                        <div class="p-2 rounded" style="background: rgba(0,0,0,0.15); border: 1px solid var(--border-color); height: 320px; display: flex; flex-direction: column; overflow: hidden;">
+                                            <div class="fw-bold text-white" style="font-size: 0.8rem; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 4px; flex-shrink: 0;">⚡ Bước giá (Order Book)</div>
+                                            <div style="flex: 1; overflow-y: auto; margin-top: 6px;">
+                                            <table class="table table-dark table-sm table-borderless align-middle m-0" style="font-size: 0.8rem;">
+                                                <thead>
+                                                    <tr class="text-secondary border-bottom border-secondary border-opacity-10" style="font-size: 0.7rem;">
+                                                        <th>Lệnh</th>
+                                                        <th class="text-end">Giá (đ)</th>
+                                                        <th class="text-end">KL</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody id="orderBookBody">
+                                                    <!-- Load dynamically via selectStock -->
+                                                </tbody>
+                                            </table>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Chart (TradingView Lightweight Charts) -->
+                                    <div class="col-md-7">
+                                        <div class="p-2 rounded" style="background: rgba(0,0,0,0.15); border: 1px solid var(--border-color); height: 320px; display: flex; flex-direction: column; overflow: hidden;">
+                                            <div class="d-flex justify-content-between align-items-center" style="border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 4px; width: 100%; flex-shrink: 0;">
+                                                <span class="fw-bold text-white" style="font-size: 0.8rem;">📊 Biểu đồ Kỹ thuật</span>
+                                                <span class="text-secondary" style="font-size: 0.7rem;">Nguồn: DNSE Engine</span>
+                                            </div>
+                                            <div id="lightweightChartContainer" style="width: 100%; flex: 1; min-height: 0; position: relative; overflow: hidden; border-radius: 4px; margin-top: 6px;">
+                                                <!-- Charts renders here -->
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Footer Stats và AI Advisor Rationale Box -->
+                                <div class="d-flex justify-content-between align-items-center mt-3 pt-2 border-top border-secondary border-opacity-10" style="font-size: 0.75rem;">
+                                    <div>
+                                        <span class="text-secondary">Tổng KL Khớp:</span>
+                                        <span class="fw-bold text-white ms-1" id="statMatchedVol">0</span>
+                                    </div>
+                                    <div>
+                                        <span class="text-secondary">Tổng Giá Trị:</span>
+                                        <span class="fw-bold text-white ms-1" id="statMatchedVal">0đ</span>
+                                    </div>
+                                </div>
+
+                                <!-- AI Rationale -->
+                                <div class="mt-2 p-2 rounded" style="background: rgba(139, 92, 246, 0.06); border: 1px solid rgba(139, 92, 246, 0.15);">
+                                    <div class="d-flex align-items-center gap-2 mb-1">
+                                        <span style="font-size: 1rem;">🤖</span>
+                                        <span class="fw-bold text-white" style="font-size: 0.8rem;">Đánh giá của AI Advisor</span>
+                                    </div>
+                                    <div class="mb-1" style="font-size: 0.75rem;">
+                                        <span class="text-secondary">Chiến lược áp dụng:</span>
+                                        <span class="fw-bold text-info ms-1" id="detailStrategy">Không</span>
+                                    </div>
+                                    <div class="text-secondary" style="font-size: 0.75rem; line-height: 1.3;" id="detailRationale">
+                                        Đang tải dữ liệu...
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -331,16 +508,41 @@
                         <div class="accordion-item bg-transparent border-0 border-bottom border-secondary mb-2">
                             <h2 class="accordion-header" id="heading-@strat.Id">
                                 <button class="accordion-button collapsed bg-transparent text-white fw-bold px-0 py-3 d-flex justify-content-between align-items-center" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-@strat.Id" aria-expanded="false" aria-controls="collapse-@strat.Id" style="box-shadow: none; font-size: 0.9rem;">
-                                    <span>
-                                        @strat.Name 
-                                        <span class="badge bg-secondary stock-badge ms-2" style="font-size: 0.7rem;">@strat.StrategyType</span>
+                                    <span class="d-flex flex-column align-items-start">
+                                        <span class="d-flex align-items-center gap-2 flex-wrap">
+                                            @strat.Name 
+                                            <span class="badge bg-secondary stock-badge" style="font-size: 0.7rem;">@strat.StrategyType</span>
+                                            @if (strat.IsAutoGenerated)
+                                            {
+                                                <span class="badge bg-info text-dark fw-bold" style="font-size: 0.65rem; box-shadow: 0 0 8px rgba(6, 182, 212, 0.4);">🧠 Tự học máy (AI Auto)</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge bg-dark border border-secondary text-secondary" style="font-size: 0.65rem;">📚 Mô hình nền tảng</span>
+                                            }
+                                        </span>
+                                        @if (strat.IsAutoGenerated || strat.LearnCount > 0)
+                                        {
+                                            <span class="text-secondary mt-1 fw-normal" style="font-size: 0.72rem; letter-spacing: 0.02em;">
+                                                Số lần tự học: <span class="text-info fw-semibold">@strat.LearnCount</span> | 
+                                                Đúng: <span class="text-success fw-semibold">@strat.WinCount</span> | 
+                                                Sai: <span class="text-danger fw-semibold">@strat.LossCount</span> |
+                                                Độ chính xác: <span class="text-warning fw-semibold">@(strat.LearnCount > 0 ? (strat.WinCount * 100.0 / strat.LearnCount).ToString("F1") + "%" : "0.0%")</span>
+                                            </span>
+                                        }
                                     </span>
                                 </button>
                             </h2>
                             <div id="collapse-@strat.Id" class="accordion-collapse collapse" aria-labelledby="heading-@strat.Id" data-bs-parent="#strategiesAccordion">
                                 <div class="accordion-body px-0 py-2 text-secondary" style="font-size: 0.85rem;">
                                     <div class="mb-2"><strong>Mô tả:</strong> @strat.Description</div>
-                                    <div class="mb-3"><strong>Quy tắc AI:</strong> <span class="text-info">@strat.RuleLogic</span></div>
+                                    <div class="mb-2"><strong>Quy tắc AI:</strong> <span class="text-info">@strat.RuleLogic</span></div>
+                                    @if (strat.LastLearnedAt.HasValue)
+                                    {
+                                        <div class="mb-3" style="font-size: 0.75rem;">
+                                            📅 <strong>Học máy gần nhất:</strong> <span class="text-white">@strat.LastLearnedAt.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</span>
+                                        </div>
+                                    }
                                     
                                     <div class="mt-2 p-2 rounded" style="background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.05);">
                                         <div class="text-white mb-2 fw-semibold" style="font-size: 0.8rem;">📊 Mô phỏng mô hình giao dịch:</div>
@@ -380,9 +582,20 @@
                     {
                         foreach (var ep in episodes)
                         {
+                            var isSimulation = ep.Rationale.Contains("[Giả lập]") || ep.Result.Contains("Giả lập");
                             <div class="p-3 mb-3 rounded border" style="background: rgba(255,255,255,0.02); border-color: rgba(255,255,255,0.05) !important;">
                                 <div class="d-flex justify-content-between align-items-center mb-2">
-                                    <span class="fw-bold text-white" style="font-size: 0.9rem;">@ep.ActionTaken</span>
+                                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                                        <span class="fw-bold text-white" style="font-size: 0.9rem;">@ep.ActionTaken</span>
+                                        @if (isSimulation)
+                                        {
+                                            <span class="badge bg-secondary bg-opacity-20 border border-secondary border-opacity-30 text-secondary" style="font-size: 0.65rem; padding: 2px 6px;">🤖 Giả lập</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-success bg-opacity-25 border border-success border-opacity-30 text-success fw-bold" style="font-size: 0.65rem; padding: 2px 6px; box-shadow: 0 0 6px rgba(16, 185, 129, 0.2);">💼 Lệnh thật</span>
+                                        }
+                                    </div>
                                     <span class="badge @(ep.Result.Contains("LÃI") ? "bg-success" : "bg-danger")" style="font-size: 0.75rem;">
                                         @ep.Result
                                     </span>
@@ -687,4 +900,392 @@
     }
     setupCommaFormatting('AmountPerTradeDisplay', 'AmountPerTrade');
     setupCommaFormatting('TargetAmountDisplay', 'TargetAmount');
+
+    // ==========================================
+    // CLIENT SIDE STOCK DETAILS, CHARTS & POLLING
+    // ==========================================
+
+    let activeSymbol = '';
+    let tvChart = null;
+    let tvCandlestickSeries = null;
+    let tvVolumeSeries = null;
+
+    // Helper to format currency
+    function formatVND(val) {
+        return Math.round(val).toLocaleString('vi-VN') + ' đ';
+    }
+    function formatNumber(val) {
+        return Math.round(val).toLocaleString('vi-VN');
+    }
+
+    // Helper to get color classes based on VN Stock Board
+    function getVNColorClass(price, ref, ceiling, floor) {
+        if (price === ceiling) return 'text-purple';
+        if (price === floor) return 'text-cyan';
+        if (price === ref) return 'text-yellow';
+        return price > ref ? 'text-green' : 'text-red';
+    }
+
+    // Interactive Stock Selection
+    window.selectStock = function(symbol) {
+        if (!symbol) return;
+        activeSymbol = symbol;
+
+        // Highlight selected row
+        document.querySelectorAll('.watchlist-row').forEach(row => {
+            row.classList.remove('active-stock');
+        });
+        const activeRow = document.getElementById(`row-${symbol}`);
+        if (activeRow) {
+            activeRow.classList.add('active-stock');
+        }
+
+        // Show panel — must toggle Bootstrap classes because d-flex uses !important
+        const noStockEl = document.getElementById('noStockSelected');
+        noStockEl.classList.remove('d-flex');
+        noStockEl.classList.add('d-none');
+        document.getElementById('stockDetailPanel').style.display = 'block';
+
+        // Fetch detail
+        fetch(`/Copilot/GetStockDetail?symbol=${symbol}`)
+            .then(res => res.json())
+            .then(data => {
+                // Render headers
+                document.getElementById('detailSymbol').innerText = data.symbol;
+                document.getElementById('detailExchange').innerText = data.exchange;
+                document.getElementById('detailCompanyName').innerText = data.companyName;
+                
+                const ref = data.referencePrice;
+                const ceil = data.ceilingPrice;
+                const flr = data.floorPrice;
+                const cur = data.currentPrice;
+
+                const curColor = getVNColorClass(cur, ref, ceil, flr);
+                document.getElementById('detailPrice').className = `h4 m-0 fw-bold ${curColor}`;
+                document.getElementById('detailPrice').innerText = formatVND(cur);
+
+                const sign = data.changePercentage >= 0 ? '+' : '';
+                const pctColor = data.changePercentage >= 0 ? 'text-green' : 'text-red';
+                document.getElementById('detailChangePct').className = `small fw-semibold mt-1 ${pctColor}`;
+                document.getElementById('detailChangePct').innerText = `${sign}${data.changePercentage.toFixed(2)}%`;
+
+                // Render Quick Stats
+                document.getElementById('statCeiling').innerText = formatNumber(ceil);
+                document.getElementById('statRef').innerText = formatNumber(ref);
+                document.getElementById('statFloor').innerText = formatNumber(flr);
+                document.getElementById('statHigh').innerText = formatNumber(data.highPrice);
+                document.getElementById('statLow').innerText = formatNumber(data.lowPrice);
+                document.getElementById('statAvg').innerText = formatNumber(data.averagePrice);
+
+                // Render Footer volume/value
+                document.getElementById('statMatchedVol').innerText = formatNumber(data.matchedVolume);
+                document.getElementById('statMatchedVal').innerText = data.matchedValue >= 1000000000 
+                    ? (data.matchedValue / 1000000000).toFixed(2) + ' tỷ' 
+                    : formatVND(data.matchedValue);
+
+                // Render AI advice
+                document.getElementById('detailStrategy').innerText = data.strategyApplied;
+                document.getElementById('detailRationale').innerText = data.aiRationale;
+
+                // Render Order book
+                renderOrderBook(data);
+
+                // Render Lightweight Chart
+                renderLightweightChart(data.historicalCandles);
+            })
+            .catch(err => console.error('Lỗi khi lấy chi tiết cổ phiếu:', err));
+    };
+
+    // Render DNSE-style Order Book (Bước giá)
+    function renderOrderBook(stockDetail) {
+        const tableBody = document.getElementById('orderBookBody');
+        if (!tableBody) return;
+
+        const ref = stockDetail.referencePrice;
+        const ceil = stockDetail.ceilingPrice;
+        const flr = stockDetail.floorPrice;
+
+        const allVolumes = [
+            ...stockDetail.asks.map(a => a.volume),
+            ...stockDetail.bids.map(b => b.volume)
+        ];
+        const maxVol = Math.max(...allVolumes, 1);
+
+        let html = '';
+
+        // Asks (reversed: Sell 3, Sell 2, Sell 1 from top to bottom)
+        const asks = [...stockDetail.asks].reverse();
+        asks.forEach((ask, index) => {
+            const pColor = getVNColorClass(ask.price, ref, ceil, flr);
+            const pct = (ask.volume / maxVol) * 100;
+            html += `
+                <tr>
+                    <td class="text-secondary" style="font-size: 0.75rem;">Bán ${3 - index}</td>
+                    <td class="fw-bold ${pColor} text-end">${formatNumber(ask.price)}</td>
+                    <td class="text-end text-white position-relative" style="z-index: 1;">
+                        <div class="depth-bar ask-depth" style="width: ${pct}%;"></div>
+                        <span class="position-relative" style="z-index: 2; font-family: monospace;">${formatNumber(ask.volume)}</span>
+                    </td>
+                </tr>
+            `;
+        });
+
+        // Middle Matched price
+        const curColor = getVNColorClass(stockDetail.currentPrice, ref, ceil, flr);
+        const sign = stockDetail.changePercentage >= 0 ? '+' : '';
+        html += `
+            <tr class="match-row" style="background: rgba(255,255,255,0.03); border-top: 1px solid var(--border-color); border-bottom: 1px solid var(--border-color);">
+                <td class="fw-bold text-white" style="font-size: 0.75rem;">Khớp</td>
+                <td class="fw-bold ${curColor} text-end" style="font-size: 0.95rem;">${formatNumber(stockDetail.currentPrice)}</td>
+                <td class="text-end fw-bold ${curColor}" style="font-size: 0.8rem; font-family: monospace;">
+                    ${sign}${stockDetail.changePercentage.toFixed(2)}%
+                </td>
+            </tr>
+        `;
+
+        // Bids (Buy 1, Buy 2, Buy 3)
+        stockDetail.bids.forEach((bid, index) => {
+            const pColor = getVNColorClass(bid.price, ref, ceil, flr);
+            const pct = (bid.volume / maxVol) * 100;
+            html += `
+                <tr>
+                    <td class="text-secondary" style="font-size: 0.75rem;">Mua ${index + 1}</td>
+                    <td class="fw-bold ${pColor} text-end">${formatNumber(bid.price)}</td>
+                    <td class="text-end text-white position-relative" style="z-index: 1;">
+                        <div class="depth-bar bid-depth" style="width: ${pct}%;"></div>
+                        <span class="position-relative" style="z-index: 2; font-family: monospace;">${formatNumber(bid.volume)}</span>
+                    </td>
+                </tr>
+            `;
+        });
+
+        tableBody.innerHTML = html;
+    }
+
+    // Render Standalone TradingView Lightweight Chart
+    function renderLightweightChart(candles) {
+        const container = document.getElementById('lightweightChartContainer');
+        if (!container) return;
+
+        // Map data format for lightweight charts
+        const chartData = candles.map(c => ({
+            time: c.time,
+            open: c.open,
+            high: c.high,
+            low: c.low,
+            close: c.close
+        }));
+
+        const volumeData = candles.map(c => ({
+            time: c.time,
+            value: c.volume,
+            color: c.close >= c.open ? 'rgba(16, 185, 129, 0.4)' : 'rgba(239, 68, 68, 0.4)'
+        }));
+
+        if (!tvChart) {
+            // Clear any static container text
+            container.innerHTML = '';
+
+            const options = {
+                layout: {
+                    background: { type: 'solid', color: '#131722' },
+                    textColor: '#d1d4dc',
+                    fontFamily: 'Plus Jakarta Sans',
+                },
+                grid: {
+                    vertLines: { color: 'rgba(42, 46, 57, 0.5)' },
+                    horzLines: { color: 'rgba(42, 46, 57, 0.5)' },
+                },
+                rightPriceScale: {
+                    borderColor: 'rgba(197, 203, 206, 0.1)',
+                },
+                timeScale: {
+                    borderColor: 'rgba(197, 203, 206, 0.1)',
+                },
+            };
+
+            tvChart = LightweightCharts.createChart(container, options);
+
+            tvCandlestickSeries = tvChart.addCandlestickSeries({
+                upColor: '#10b981', downColor: '#ef4444',
+                borderVisible: false,
+                wickUpColor: '#10b981', wickDownColor: '#ef4444'
+            });
+
+            tvVolumeSeries = tvChart.addHistogramSeries({
+                color: '#26a69a',
+                priceFormat: { type: 'volume' },
+                priceScaleId: '', // overlay mode
+            });
+
+            tvVolumeSeries.priceScale().applyOptions({
+                scaleMargins: {
+                    top: 0.75, // volume at bottom 25%
+                    bottom: 0,
+                },
+            });
+
+            // Handle resizing
+            const resizeObserver = new ResizeObserver(entries => {
+                if (entries.length === 0 || entries[0].target !== container) return;
+                const { width, height } = entries[0].contentRect;
+                tvChart.resize(width, height);
+            });
+            resizeObserver.observe(container);
+        }
+
+        tvCandlestickSeries.setData(chartData);
+        tvVolumeSeries.setData(volumeData);
+        tvChart.timeScale().fitContent();
+    }
+
+    // Watchlist Poller (Updates rows in table dynamically)
+    function pollWatchlist() {
+        fetch('/Copilot/GetWatchlist')
+            .then(res => res.json())
+            .then(stocks => {
+                stocks.forEach(stock => {
+                    const priceEl = document.getElementById(`price-${stock.Symbol}`);
+                    const changeEl = document.getElementById(`change-${stock.Symbol}`);
+                    const signalEl = document.getElementById(`signal-${stock.Symbol}`);
+
+                    if (priceEl) priceEl.innerText = formatNumber(stock.CurrentPrice) + ' đ';
+                    
+                    if (changeEl) {
+                        const isUp = stock.ChangePercentage >= 0;
+                        const badgeClass = isUp ? "badge-up" : "badge-down";
+                        const sign = isUp ? "+" : "";
+                        changeEl.innerHTML = `
+                            <span class="stock-badge ${badgeClass}">
+                                ${sign}${stock.ChangePercentage.toFixed(2)}%
+                            </span>
+                        `;
+                    }
+
+                    if (signalEl) {
+                        const signalBadge = stock.AiSignal === "BUY" 
+                            ? "<span class='badge bg-success text-white px-2 py-1' style='font-size: 0.75rem;'>🟢 MUA</span>"
+                            : stock.AiSignal === "SELL"
+                                ? "<span class='badge bg-danger text-white px-2 py-1' style='font-size: 0.75rem;'>🔴 BÁN</span>"
+                                : "<span class='badge bg-secondary text-white px-2 py-1' style='font-size: 0.75rem;'>🟡 THEO DÕI</span>";
+                        signalEl.innerHTML = signalBadge;
+                    }
+                });
+            })
+            .catch(err => console.error('Lỗi cập nhật watchlist:', err));
+    }
+
+    // Detail Panel Poller (Updates active symbol's stats & order book & chart last candle)
+    function pollActiveStockDetail() {
+        if (!activeSymbol) return;
+
+        fetch(`/Copilot/GetStockDetail?symbol=${activeSymbol}`)
+            .then(res => res.json())
+            .then(data => {
+                const ref = data.referencePrice;
+                const ceil = data.ceilingPrice;
+                const flr = data.floorPrice;
+                const cur = data.currentPrice;
+
+                const curColor = getVNColorClass(cur, ref, ceil, flr);
+                const priceEl = document.getElementById('detailPrice');
+                if (priceEl) {
+                    priceEl.className = `h4 m-0 fw-bold ${curColor}`;
+                    priceEl.innerText = formatVND(cur);
+                }
+
+                const sign = data.changePercentage >= 0 ? '+' : '';
+                const pctColor = data.changePercentage >= 0 ? 'text-green' : 'text-red';
+                const changeEl = document.getElementById('detailChangePct');
+                if (changeEl) {
+                    changeEl.className = `small fw-semibold mt-1 ${pctColor}`;
+                    changeEl.innerText = `${sign}${data.changePercentage.toFixed(2)}%`;
+                }
+
+                // Stats
+                document.getElementById('statCeiling').innerText = formatNumber(ceil);
+                document.getElementById('statRef').innerText = formatNumber(ref);
+                document.getElementById('statFloor').innerText = formatNumber(flr);
+                document.getElementById('statHigh').innerText = formatNumber(data.highPrice);
+                document.getElementById('statLow').innerText = formatNumber(data.lowPrice);
+                document.getElementById('statAvg').innerText = formatNumber(data.averagePrice);
+
+                document.getElementById('statMatchedVol').innerText = formatNumber(data.matchedVolume);
+                document.getElementById('statMatchedVal').innerText = data.matchedValue >= 1000000000 
+                    ? (data.matchedValue / 1000000000).toFixed(2) + ' tỷ' 
+                    : formatVND(data.matchedValue);
+
+                // AI advices
+                document.getElementById('detailStrategy').innerText = data.strategyApplied;
+                document.getElementById('detailRationale').innerText = data.aiRationale;
+
+                // Re-render Order Book
+                renderOrderBook(data);
+
+                // Update last candle
+                if (data.historicalCandles && data.historicalCandles.length > 0 && tvCandlestickSeries && tvVolumeSeries) {
+                    const lastCandle = data.historicalCandles[data.historicalCandles.length - 1];
+                    tvCandlestickSeries.update({
+                        time: lastCandle.time,
+                        open: lastCandle.open,
+                        high: lastCandle.high,
+                        low: lastCandle.low,
+                        close: lastCandle.close
+                    });
+                    tvVolumeSeries.update({
+                        time: lastCandle.time,
+                        value: lastCandle.volume,
+                        color: lastCandle.close >= lastCandle.open ? 'rgba(16, 185, 129, 0.4)' : 'rgba(239, 68, 68, 0.4)'
+                    });
+                }
+            })
+            .catch(err => console.error('Lỗi cập nhật chi tiết cổ phiếu:', err));
+    }
+
+    // Micro-animation: slightly fluctuate order book volumes
+    function animateOrderBookVolumes() {
+        if (!activeSymbol) return;
+        const volumeCells = document.querySelectorAll('#orderBookBody span.position-relative');
+        const depthBars = document.querySelectorAll('#orderBookBody .depth-bar');
+
+        if (volumeCells.length === 0) return;
+
+        // Extract current volumes to find max volume
+        const vols = Array.from(volumeCells).map(c => {
+            const val = parseInt(c.innerText.replace(/\./g, ''), 10);
+            return isNaN(val) ? 0 : val;
+        });
+        
+        // Randomly fluctuate volumes by +/- 5%
+        const fluctuatedVols = vols.map(v => {
+            const change = (Math.random() * 10 - 5) * 0.01; // +/- 5%
+            return Math.max(10, Math.round(v * (1 + change)));
+        });
+
+        const maxVol = Math.max(...fluctuatedVols, 1);
+
+        // Update DOM
+        volumeCells.forEach((cell, idx) => {
+            const newV = fluctuatedVols[idx];
+            cell.innerText = formatNumber(newV);
+            if (depthBars[idx]) {
+                const newPct = (newV / maxVol) * 100;
+                depthBars[idx].style.width = `${newPct}%`;
+            }
+        });
+    }
+
+    // Initialize Polling
+    setInterval(pollWatchlist, 3000);
+    setInterval(pollActiveStockDetail, 3000);
+    setInterval(animateOrderBookVolumes, 800);
+
+    // Auto-select the first stock in the watchlist on load if any
+    document.addEventListener('DOMContentLoaded', () => {
+        const firstRow = document.querySelector('.watchlist-row');
+        if (firstRow) {
+            const sym = firstRow.id.replace('row-', '');
+            selectStock(sym);
+        }
+    });
 </script>

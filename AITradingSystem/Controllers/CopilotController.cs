@@ -82,11 +82,15 @@ namespace AITradingSystem.Controllers
         // MÀN HÌNH MỚI: Danh mục cổ phiếu đã mua (Portfolio)
         public async Task<IActionResult> Portfolio()
         {
-            var positions = await _context.TradePositions.Where(p => p.Status == "OPEN").ToListAsync();
+            var positions = await _context.TradePositions.OrderByDescending(p => p.Status == "OPEN").ThenByDescending(p => p.EntryDate).ToListAsync();
+            var closedPositions = positions.Where(p => p.Status == "CLOSED").ToList();
             var stocks = GetDNSEStocks();
             var pref = await GetUserPreference();
             decimal totalPnL = 0;
             decimal totalTargetAmount = 0;
+            decimal allocatedBudget = 0;
+            decimal totalRealizedPnL = closedPositions.Sum(p => p.PnL);
+            decimal cumulativePnL = totalRealizedPnL;
             var analysisMap = new Dictionary<int, PositionAnalysis>();
 
             foreach (var pos in positions)
@@ -229,19 +233,158 @@ namespace AITradingSystem.Controllers
                 }
 
                 analysisMap[pos.Id] = analysis;
+                if (pos.Status == "OPEN" && !pos.IsAiTrade)
+                {
+                    allocatedBudget += analysis.InvestedAmount;
+                }
             }
 
+            cumulativePnL += totalPnL;
+            decimal remainingOtherBudget = Math.Max(0m, pref.TargetAmount - allocatedBudget);
+
             ViewBag.Positions = positions;
+            ViewBag.ClosedPositions = closedPositions;
             ViewBag.Stocks = stocks;
             ViewBag.Preference = pref;
             ViewBag.TotalPnL = totalPnL;
             ViewBag.TotalTargetAmount = totalTargetAmount;
+            ViewBag.AllocatedBudget = allocatedBudget;
+            ViewBag.RemainingOtherBudget = remainingOtherBudget;
+            ViewBag.TotalRealizedPnL = totalRealizedPnL;
+            ViewBag.CumulativePnL = cumulativePnL;
             ViewBag.AnalysisMap = analysisMap;
+            
+            var transactions = await _context.StockTransactions.ToListAsync();
+            ViewBag.Transactions = transactions;
 
-            return View();
+            return View("Portfolio");
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> RunPlanAnalysis()
+        {
+            var positions = await _context.TradePositions.Where(p => p.Status == "OPEN").ToListAsync();
+            var pref = await GetUserPreference();
+            var stocks = GetDNSEStocks();
+
+            var plan = new AITradingSystem.Services.GlobalPortfolioPlanResult
+            {
+                SuccessProbability = 75,
+                PlanSummary = $"Dựa trên danh mục hiện tại và mục tiêu đầu tư, hệ thống đã lập kế hoạch tối ưu cơ cấu tài sản. Ngày bắt đầu: {DateTime.Today:dd/MM/yyyy}.",
+                Actions = new List<AITradingSystem.Services.PlanAction>(),
+                ExpectedContributions = new List<AITradingSystem.Services.ExpectedContribution>(),
+                DailyCalendar = new List<AITradingSystem.Models.DailyCalendarItem>(),
+                Rationale = "Đảm bảo phân bổ vốn theo đúng tỷ trọng rủi ro, ưu tiên chốt lời các mã đạt mục tiêu và cắt lỗ sớm các mã vi phạm.",
+                StartDate = DateTime.Today,
+                EndDate = DateTime.Today.AddDays(7),
+                RemainingDays = 7
+            };
+
+            decimal totalAllocated = 0;
+            int dayOffset = 0;
+
+            foreach (var pos in positions)
+            {
+                if (pos.Status == "CLOSED") continue;
+
+                var currentPrice = stocks.FirstOrDefault(s => s.Symbol == pos.Symbol)?.CurrentPrice ?? pos.EntryPrice;
+                var currentPnL = (currentPrice - pos.EntryPrice) * pos.Quantity;
+                
+                decimal targetPrice = pos.TakeProfitPrice ?? (pos.EntryPrice * (1 + (pref.TargetProfitPercentage > 0 ? pref.TargetProfitPercentage / 100m : 0.1m)));
+                decimal stopLossPrice = pos.StopLossPrice ?? (pos.EntryPrice * (1 - (pref.MaxLossPercentage > 0 ? pref.MaxLossPercentage / 100m : 0.05m)));
+                
+                decimal expectedProfit = pos.Quantity * Math.Max(0, targetPrice - pos.EntryPrice);
+                decimal progress = (targetPrice - pos.EntryPrice) > 0 ? (currentPrice - pos.EntryPrice) / (targetPrice - pos.EntryPrice) * 100m : 0;
+                
+                int daysHeld = (DateTime.Today - pos.EntryDate.Date).Days;
+                int remainDays = (pos.ExpectedHoldDays ?? 30) - daysHeld;
+                
+                string action, desc, calDesc;
+                
+                if (currentPrice >= targetPrice)
+                {
+                    action = "BÁN (CHỐT LỜI)";
+                    desc = $"Đã đạt mục tiêu lợi nhuận ({targetPrice:N0} đ). Tiến độ 100%. Khuyến nghị chốt lời toàn bộ.";
+                    calDesc = $"**{pos.Symbol}**: Giá đã đạt kỳ vọng. Nên thực hiện lệnh chốt ngay hôm nay để thu hồi vốn và lãi.";
+                }
+                else if (currentPrice <= stopLossPrice)
+                {
+                    action = "BÁN (CẮT LỖ)";
+                    desc = $"Đã vi phạm ngưỡng cắt lỗ ({stopLossPrice:N0} đ). Khuyến nghị cắt lỗ khẩn cấp để bảo toàn vốn.";
+                    calDesc = $"**{pos.Symbol}**: Rủi ro cao! Đề xuất đóng vị thế ngay lập tức để tránh lỗ sâu hơn.";
+                }
+                else if (currentPnL > 0)
+                {
+                    action = "NẮM GIỮ (ĐANG LÃI)";
+                    desc = $"Tiến độ {progress:N1}%. Đang có lãi {currentPnL:N0} đ. Đã giữ {daysHeld} ngày. Xu hướng tốt, tiếp tục gồng lãi tới {targetPrice:N0} đ.";
+                    calDesc = $"**{pos.Symbol}**: Tiếp tục nắm giữ. Cân nhắc dời điểm chặn lãi (trailing stop) lên hòa vốn để bảo vệ thành quả.";
+                }
+                else
+                {
+                    action = "NẮM GIỮ (CHỜ PHỤC HỒI)";
+                    desc = $"Đang lỗ nhẹ {Math.Abs(currentPnL):N0} đ. Còn cách xa cắt lỗ ({stopLossPrice:N0} đ). Thời gian cầm còn {remainDays} ngày.";
+                    calDesc = $"**{pos.Symbol}**: Giai đoạn tích lũy. Nắm giữ và theo dõi chặt chẽ ngưỡng hỗ trợ gần {stopLossPrice:N0} đ.";
+                }
+                
+                plan.Actions.Add(new AITradingSystem.Services.PlanAction
+                {
+                    Ticker = pos.Symbol,
+                    Action = action,
+                    Description = desc
+                });
+
+                plan.ExpectedContributions.Add(new AITradingSystem.Services.ExpectedContribution
+                {
+                    Ticker = pos.Symbol,
+                    ExpectedProfit = expectedProfit,
+                    Description = $"Mục tiêu chốt tại {targetPrice:N0} đ (Khối lượng: {pos.Quantity} CP)"
+                });
+
+                var planDate = DateTime.Today.AddDays(dayOffset);
+                plan.DailyCalendar.Add(new AITradingSystem.Models.DailyCalendarItem
+                {
+                    Date = planDate.ToString("dd/MM/yyyy"),
+                    DayOfWeek = planDate.ToString("dddd"),
+                    ActionType = action.Contains("BÁN") ? "BÁN" : "GIỮ",
+                    Description = calDesc,
+                    Target = $"{targetPrice:N0} đ",
+                    CumulativePnL = $"{currentPnL:N0} đ",
+                    ActualAction = "-"
+                });
+                
+                dayOffset++;
+                if (dayOffset > 7) dayOffset = 0;
+            }
+
+            PopulateActualActions(plan.DailyCalendar, await _context.StockTransactions.ToListAsync());
+
+            ViewBag.GlobalPlan = plan;
+
+            return await Portfolio();
+        }
+
+        private void PopulateActualActions(List<AITradingSystem.Models.DailyCalendarItem> calendar, List<StockTransaction> transactions)
+        {
+            foreach (var item in calendar)
+            {
+                if (DateTime.TryParseExact(item.Date, "dd/MM/yyyy", null, System.Globalization.DateTimeStyles.None, out DateTime parsedDate))
+                {
+                    var todaysTx = transactions.Where(t => t.TransactionDate.Date == parsedDate.Date).ToList();
+                    if (todaysTx.Any())
+                    {
+                        var actions = todaysTx.Select(t => $"{(t.TransactionType == "BUY" ? "MUA" : "BÁN")} {t.Symbol} ({t.Quantity} CP @ {t.Price:N0})").ToList();
+                        item.ActualAction = string.Join("<br/>", actions);
+                    }
+                    else
+                    {
+                        item.ActualAction = "-";
+                    }
+                }
+            }
         }
 
         // MÀN HÌNH MỚI: Liên kết tài khoản & Cấu hình rủi ro (Settings)
+
         public async Task<IActionResult> Account()
         {
             var preference = await GetUserPreference();
@@ -367,6 +510,7 @@ namespace AITradingSystem.Controllers
                     existing.TakeProfitAmount = model.TakeProfitAmount;
                     existing.StopLossAmount = model.StopLossAmount;
                     existing.RiskTolerance = model.RiskTolerance;
+                    existing.PlanStartDate = model.PlanStartDate;
                     
                     _context.UserPreferences.Update(existing);
                 }
@@ -597,6 +741,76 @@ namespace AITradingSystem.Controllers
             return RedirectToAction(nameof(Portfolio));
         }
 
+        [HttpGet]
+        public IActionResult GetWatchlist()
+        {
+            var stocks = GetDNSEStocks();
+            return Json(stocks);
+        }
+
+        [HttpGet]
+        public IActionResult GetStockDetail(string symbol)
+        {
+            var stock = GetDNSEStocks().FirstOrDefault(s => s.Symbol == symbol);
+            if (stock == null) return NotFound();
+
+            var candles = new List<object>();
+            var random = new Random();
+            decimal current = stock.CurrentPrice * 0.85m;
+            for (int i = 30; i >= 0; i--)
+            {
+                var date = DateTime.Today.AddDays(-i);
+                if (date.DayOfWeek == DayOfWeek.Saturday || date.DayOfWeek == DayOfWeek.Sunday) continue;
+                
+                decimal change = (decimal)((random.NextDouble() - 0.4) * 0.04);
+                current = current * (1 + change);
+                
+                decimal high = current * (1 + (decimal)(random.NextDouble() * 0.02));
+                decimal low = current * (1 - (decimal)(random.NextDouble() * 0.02));
+                decimal open = low + (high - low) * (decimal)random.NextDouble();
+                decimal close = low + (high - low) * (decimal)random.NextDouble();
+                
+                if (i == 0) close = stock.CurrentPrice;
+
+                candles.Add(new {
+                    time = date.ToString("yyyy-MM-dd"),
+                    open = open,
+                    high = high,
+                    low = low,
+                    close = close
+                });
+            }
+
+            var bidOrders = new List<object>();
+            var askOrders = new List<object>();
+            for (int i = 1; i <= 3; i++)
+            {
+                bidOrders.Add(new { price = stock.CurrentPrice - (i * 100), volume = random.Next(100, 5000) });
+                askOrders.Add(new { price = stock.CurrentPrice + (i * 100), volume = random.Next(100, 5000) });
+            }
+
+            return Json(new {
+                symbol = stock.Symbol,
+                exchange = stock.Exchange,
+                companyName = stock.CompanyName,
+                referencePrice = stock.CurrentPrice * 0.98m,
+                ceilingPrice = stock.CurrentPrice * 1.07m,
+                floorPrice = stock.CurrentPrice * 0.93m,
+                currentPrice = stock.CurrentPrice,
+                changePercentage = stock.ChangePercentage,
+                highPrice = stock.CurrentPrice * 1.02m,
+                lowPrice = stock.CurrentPrice * 0.97m,
+                averagePrice = stock.CurrentPrice,
+                matchedVolume = random.Next(100000, 5000000),
+                matchedValue = random.Next(10000000, 500000000),
+                strategyApplied = "RSI & MACD Analysis",
+                aiRationale = stock.AiSignal == "BUY" ? "Chỉ số kỹ thuật cho thấy xu hướng tăng." : "Khuyến nghị theo dõi diễn biến.",
+                bids = bidOrders,
+                asks = askOrders,
+                historicalCandles = candles
+            });
+        }
+
         private List<StockViewModel> GetDNSEStocks()
         {
             return _simulationLogService.GetStockStates();
@@ -610,6 +824,8 @@ namespace AITradingSystem.Controllers
         public decimal CurrentPrice { get; set; }
         public decimal ChangePercentage { get; set; }
         public decimal Rsi { get; set; }
+        public string AiSignal { get; set; } = string.Empty;
+        public string Exchange { get; set; } = string.Empty;
     }
 
     public class PositionAnalysis
@@ -635,5 +851,19 @@ namespace AITradingSystem.Controllers
         public int DaysHeld { get; set; }
         public int? ExpectedHoldDays { get; set; }
         public int? RemainingDays { get; set; }
+        public List<ActiveLot> ActiveLots { get; set; } = new List<ActiveLot>();
+        public decimal SymbolRealizedPnL { get; set; }
+        public decimal SymbolCumulativePnL { get; set; }
+    }
+
+    public class ActiveLot
+    {
+        public DateTime Date { get; set; }
+        public int RemainingQuantity { get; set; }
+        public int OriginalQuantity { get; set; }
+        public decimal EntryPrice { get; set; }
+        public decimal CurrentPrice { get; set; }
+        public decimal PnL { get; set; }
+        public decimal PnLPercent { get; set; }
     }
 }

@@ -20,7 +20,7 @@ namespace AITradingSystem.Data
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
-            
+
             // Precision for decimals
             modelBuilder.Entity<Order>()
                 .Property(o => o.Price)
@@ -57,6 +57,8 @@ namespace AITradingSystem.Data
             modelBuilder.Entity<TradePosition>()
                 .Property(t => t.BudgetAmount)
                 .HasColumnType("decimal(18,4)");
+
+            // UserPreference decimal precision
 
             // StockTransaction decimal precision
             modelBuilder.Entity<StockTransaction>()

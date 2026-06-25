@@ -8,6 +8,23 @@
     var totalPnL = (decimal?)ViewBag.TotalPnL ?? 0;
     var totalTargetAmount = (decimal?)ViewBag.TotalTargetAmount ?? 0;
     var analysisMap = ViewBag.AnalysisMap as Dictionary<int, PositionAnalysis> ?? new Dictionary<int, PositionAnalysis>();
+    var allocatedBudget = (decimal?)ViewBag.AllocatedBudget ?? 0;
+    var remainingOtherBudget = (decimal?)ViewBag.RemainingOtherBudget ?? 0;
+    var totalRealizedPnL = (decimal?)ViewBag.TotalRealizedPnL ?? 0;
+    var cumulativePnL = (decimal?)ViewBag.CumulativePnL ?? 0;
+    var globalPlan = ViewBag.GlobalPlan as AITradingSystem.Services.GlobalPortfolioPlanResult;
+
+    DateTime startDate = pref.PlanStartDate ?? DateTime.Today;
+    int totalDays = 30;
+    if (!string.IsNullOrEmpty(pref.InvestmentHorizon))
+    {
+        var match = System.Text.RegularExpressions.Regex.Match(pref.InvestmentHorizon, @"\d+");
+        if (match.Success) int.TryParse(match.Value, out totalDays);
+    }
+    DateTime endDate = startDate.AddDays(totalDays);
+    int remainingDays = (endDate.Date - DateTime.Now.Date).Days;
+    if (remainingDays < 0) remainingDays = 0;
+    decimal remainingAmountTotal = Math.Max(0m, pref.TargetAmount - cumulativePnL);
 }
 
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -345,14 +362,61 @@
         font-weight: 600;
         margin-top: 2px;
     }
+
+    /* Detailed Transaction History Timeline */
+    .transaction-section {
+        background: rgba(255, 255, 255, 0.015);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        padding: 16px;
+    }
+
+    .timeline-container {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    .timeline-item {
+        position: relative;
+        padding-bottom: 4px;
+    }
+
+    .timeline-item:last-child {
+        margin-bottom: 0 !important;
+    }
 </style>
 
 <div class="container-fluid py-4">
     <!-- Header -->
-    <div class="d-flex justify-content-between align-items-end mb-4">
+    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
         <div>
             <h1 class="fw-bold mb-1"><span class="gradient-text">Danh mục đầu tư</span></h1>
-            <p class="text-secondary m-0">Thiết lập mục tiêu lợi nhuận cho từng mã · Nguồn mua thêm cố định: @pref.AmountPerTrade.ToString("N0") đ</p>
+            <p class="text-secondary m-0">
+                Tổng vốn đầu tư: <strong class="text-white">@pref.AmountPerTrade.ToString("N0") đ</strong> | 
+                Đã phân bổ: <strong class="text-info">@allocatedBudget.ToString("N0") đ</strong> | 
+                Vốn còn lại mã khác: <strong class="text-warning">@remainingOtherBudget.ToString("N0") đ</strong> |
+                Ngày hết hạn: <strong class="text-white">@endDate.ToString("dd/MM/yyyy")</strong> |
+                Số ngày còn lại: <strong class="text-danger">@remainingDays ngày</strong> |
+                Còn thiếu mục tiêu: <strong class="text-warning">@remainingAmountTotal.ToString("N0") đ</strong>
+            </p>
+        </div>
+        <div>
+            @if (ViewBag.PlanStatus == "Pending")
+            {
+                <button class="btn btn-outline-purple text-purple fw-bold d-flex align-items-center gap-2" disabled style="border-color: var(--accent-purple); color: #c084fc; background: rgba(139, 92, 246, 0.08); border-radius: 12px; padding: 10px 20px; font-size: 0.9rem;">
+                    <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                    AI đang phân tích...
+                </button>
+            }
+            else
+            {
+                <form asp-action="RunPlanAnalysis" method="post" id="runPlanForm" class="m-0">
+                    <button type="submit" onclick="showGlobalLoading()" class="btn text-white fw-bold d-flex align-items-center gap-2" style="background: linear-gradient(135deg, #8b5cf6 0%, #3b82f6 100%); border-radius: 12px; padding: 10px 20px; border: none; box-shadow: 0 4px 15px rgba(139, 92, 246, 0.3); cursor: pointer; transition: all 0.2s; font-size: 0.9rem;">
+                        <span>🧠</span> AI Phân tích và dự đoán kế hoạch
+                    </button>
+                </form>
+            }
         </div>
     </div>
 
@@ -365,23 +429,35 @@
     }
 
     <!-- Summary Dashboard -->
-    <div class="summary-grid">
+    <div class="summary-grid mb-4">
         <div class="summary-card pnl-card">
-            <div class="card-label">Tổng Lãi/Lỗ tạm tính</div>
+            <div class="card-label">Tổng lãi/lỗ đã hiện thực</div>
+            <div class="card-value @(totalRealizedPnL >= 0 ? "pnl-positive" : "pnl-negative")">
+                @(totalRealizedPnL >= 0 ? "+" : "")@totalRealizedPnL.ToString("N0") đ
+            </div>
+        </div>
+        <div class="summary-card pnl-card" style="border-top: 3px solid var(--accent-blue);">
+            <div class="card-label">Tổng lãi/lỗ tạm tính</div>
             <div class="card-value @(totalPnL >= 0 ? "pnl-positive" : "pnl-negative")">
                 @(totalPnL >= 0 ? "+" : "")@totalPnL.ToString("N0") đ
             </div>
         </div>
+        <div class="summary-card pnl-card" style="border-top: 3px solid var(--accent-purple);">
+            <div class="card-label">Tổng lợi nhuận tích lũy</div>
+            <div class="card-value @(cumulativePnL >= 0 ? "pnl-positive" : "pnl-negative")">
+                @(cumulativePnL >= 0 ? "+" : "")@cumulativePnL.ToString("N0") đ
+            </div>
+        </div>
         <div class="summary-card target-card">
-            <div class="card-label">Tổng mục tiêu đặt ra</div>
+            <div class="card-label">Mục tiêu lợi nhuận tổng thể</div>
             <div class="card-value" style="color: var(--accent-amber);">
-                @totalTargetAmount.ToString("N0") đ
+                @pref.TargetAmount.ToString("N0") đ
             </div>
         </div>
         <div class="summary-card progress-card">
-            <div class="card-label">Tiến độ tổng thể</div>
+            <div class="card-label">Tiến độ mục tiêu tổng thể</div>
             @{
-                var overallProgress = totalTargetAmount > 0 ? Math.Min(100, Math.Max(-100, totalPnL / totalTargetAmount * 100)) : 0;
+                var overallProgress = pref.TargetAmount > 0 ? Math.Min(100, Math.Max(-100, cumulativePnL / pref.TargetAmount * 100)) : 0;
             }
             <div class="card-value" style="color: var(--accent-purple);">
                 @overallProgress.ToString("N1")%
@@ -391,13 +467,207 @@
                      style="width: @(Math.Max(0, overallProgress))%"></div>
             </div>
         </div>
-        <div class="summary-card count-card">
-            <div class="card-label">Vị thế đang giữ</div>
-            <div class="card-value" style="color: var(--accent-cyan);">
-                @positions.Count <span style="font-size: 0.85rem; color: var(--text-secondary);">mã</span>
+    </div>
+
+    <!-- AI Hoạch Định & Tối Ưu Danh Mục -->
+    @if (ViewBag.PlanStatus == "Pending")
+    {
+        <div class="glass-card mb-4 text-center py-5" style="border: 1px dashed rgba(139, 92, 246, 0.4); background: rgba(139, 92, 246, 0.02);">
+            <div class="spinner-border text-primary mb-3" style="color: var(--accent-purple) !important;" role="status"></div>
+            <h5 class="fw-bold text-white">AI đang phân tích và lập kế hoạch tối ưu danh mục...</h5>
+            <p class="text-secondary small mb-0">Hệ thống đang chạy tác vụ tối ưu hóa xác suất đạt mục tiêu cuối kỳ (khoảng 15-30 giây). Trang sẽ tự động tải lại khi hoàn thành.</p>
+        </div>
+    }
+    else if (globalPlan != null)
+    {
+        <div class="glass-card mb-4" style="background: rgba(139, 92, 246, 0.03); border: 1px solid rgba(139, 92, 246, 0.15); padding: 24px;">
+            <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+                <div class="d-flex align-items-center gap-2">
+                    <span style="font-size: 1.5rem;">🧠</span>
+                    <div>
+                        <h4 class="m-0 text-white fw-bold" style="font-size: 1.1rem;">AI Hoạch Định & Tối Ưu Danh Mục Tổng Thể</h4>
+                        <span class="text-secondary" style="font-size: 0.78rem;">
+                            Định hướng giao dịch từ ngày <strong class="text-white">@globalPlan.StartDate.ToString("dd/MM/yyyy")</strong> đến ngày <strong class="text-white">@globalPlan.EndDate.ToString("dd/MM/yyyy")</strong> (còn <strong class="text-danger">@globalPlan.RemainingDays ngày</strong>)
+                        </span>
+                    </div>
+                </div>
+                <div class="text-end">
+                    <div style="font-size: 0.75rem; color: var(--accent-purple); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;">Xác suất đạt mục tiêu cuối kỳ</div>
+                    <div class="d-flex align-items-center gap-2 mt-1 justify-content-end">
+                        <span class="fw-bold" style="font-size: 1.3rem; color: @(globalPlan.SuccessProbability >= 80 ? "var(--accent-green)" : globalPlan.SuccessProbability >= 50 ? "var(--accent-amber)" : "var(--accent-red)");">
+                            @globalPlan.SuccessProbability.ToString("N1")%
+                        </span>
+                        <div class="progress-container" style="width: 80px; height: 8px; margin: 0;">
+                            <div class="progress-bar-fill @(globalPlan.SuccessProbability >= 80 ? "complete" : globalPlan.SuccessProbability >= 50 ? "positive" : "negative")" style="width: @globalPlan.SuccessProbability%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+ 
+            <div class="row g-3">
+                <!-- Plan Summary -->
+                <div class="col-12">
+                    <div class="p-3 rounded" style="background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.05);">
+                        <div class="fw-bold text-white mb-1" style="font-size: 0.85rem; color: var(--accent-cyan) !important;">📝 Tóm tắt kế hoạch hành động:</div>
+                        <p class="m-0 text-secondary" style="font-size: 0.85rem; line-height: 1.5;">@globalPlan.PlanSummary</p>
+                    </div>
+                </div>
+ 
+                <!-- Actions Table -->
+                <div class="col-md-7">
+                    <div class="p-3 rounded h-100" style="background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.05);">
+                        <div class="fw-bold text-white mb-2" style="font-size: 0.85rem; color: var(--accent-purple) !important;">🔄 Đề xuất điều chuyển vốn & Giao dịch:</div>
+                        @if (globalPlan.Actions != null && globalPlan.Actions.Any())
+                        {
+                            <div class="table-responsive">
+                                <table class="table table-sm table-dark table-hover m-0" style="font-size: 0.8rem; border-color: rgba(255,255,255,0.03);">
+                                    <thead>
+                                        <tr class="text-secondary" style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                            <th>Mã CP</th>
+                                            <th>Hành động</th>
+                                            <th>Chi tiết điều chuyển vốn</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var act in globalPlan.Actions)
+                                        {
+                                            var actClass = act.Action switch
+                                            {
+                                                "MUA" => "pnl-positive",
+                                                "MUA THÊM" => "pnl-positive",
+                                                "BÁN" => "pnl-negative",
+                                                "CHUYỂN VỐN" => "text-info",
+                                                _ => "text-secondary"
+                                            };
+                                            <tr>
+                                                <td class="fw-bold text-white">@act.Ticker</td>
+                                                <td><span class="badge" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); font-size: 0.72rem; color: inherit; padding: 3px 6px; display: inline-block;">@act.Action</span></td>
+                                                <td class="text-secondary">@act.Description</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                        else
+                        {
+                            <span class="text-secondary small">Chưa có đề xuất giao dịch nào.</span>
+                        }
+                    </div>
+                </div>
+ 
+                <!-- Contributions -->
+                <div class="col-md-5">
+                    <div class="p-3 rounded h-100" style="background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.05);">
+                        <div class="fw-bold text-white mb-2" style="font-size: 0.85rem; color: var(--accent-amber) !important;">💰 Dự báo đóng góp lợi nhuận mục tiêu:</div>
+                        @if (globalPlan.ExpectedContributions != null && globalPlan.ExpectedContributions.Any())
+                        {
+                            <div class="d-flex flex-column gap-2">
+                                @foreach (var contrib in globalPlan.ExpectedContributions)
+                                {
+                                    <div class="p-2 rounded" style="background: rgba(255, 255, 255, 0.015); border: 1px solid rgba(255, 255, 255, 0.03);">
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <span class="fw-bold text-white" style="font-size: 0.82rem;">@contrib.Ticker</span>
+                                            <span class="pnl-positive fw-bold" style="font-size: 0.82rem;">+@contrib.ExpectedProfit.ToString("N0") đ</span>
+                                        </div>
+                                        <div class="text-secondary mt-1" style="font-size: 0.74rem;">@contrib.Description</div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                        else
+                        {
+                            <span class="text-secondary small">Chưa có phân tích đóng góp.</span>
+                        }
+                    </div>
+                </div>
+ 
+                <!-- Rationale -->
+                <div class="col-12">
+                    <div class="p-3 rounded" style="background: rgba(139, 92, 246, 0.015); border: 1px solid rgba(139, 92, 246, 0.05);">
+                        <div class="fw-bold text-white mb-1" style="font-size: 0.85rem; color: var(--accent-green) !important;">📊 Phân tích cơ sở & Quản trị rủi ro lý thuyết:</div>
+                        <p class="m-0 text-secondary" style="font-size: 0.82rem; line-height: 1.5; font-style: italic;">@globalPlan.Rationale</p>
+                    </div>
+                </div>
+
+                <!-- Daily Action Calendar -->
+                <div class="col-12 mt-3">
+                    <div class="p-3 rounded" style="background: rgba(139, 92, 246, 0.02); border: 1px solid rgba(139, 92, 246, 0.1);">
+                        <div class="fw-bold text-white mb-2" style="font-size: 0.85rem; color: var(--accent-cyan) !important;">📅 Lịch trình giao dịch tối ưu từng ngày (Daily Action Calendar):</div>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-dark table-hover m-0" style="font-size: 0.8rem; border-color: rgba(255,255,255,0.03);">
+                                <thead>
+                                    <tr class="text-secondary" style="border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 0.75rem;">
+                                        <th style="width: 8%;">Ngày</th>
+                                        <th style="width: 10%;">Thứ</th>
+                                        <th style="width: 32%;">Hành động đề xuất (Step-by-step)</th>
+                                        <th style="width: 15%;">Mục tiêu giao dịch</th>
+                                        <th style="width: 10%;">PnL tích lũy</th>
+                                        <th style="width: 25%;">Hành động thực tế</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @if (globalPlan.DailyCalendar != null && globalPlan.DailyCalendar.Any())
+                                    {
+                                        foreach (var item in globalPlan.DailyCalendar)
+                                        {
+                                            var badgeClass = item.ActionType switch
+                                            {
+                                                "MUA" => "bg-success",
+                                                "MUA THÊM" => "bg-success",
+                                                "BÁN" => "bg-danger",
+                                                "CƠ CẤU" => "bg-warning text-dark",
+                                                "TẤT TOÁN" => "bg-primary",
+                                                "SÀN ĐÓNG CỬA" => "bg-secondary",
+                                                _ => "bg-secondary"
+                                            };
+                                            <tr>
+                                                <td class="text-white fw-bold">@item.Date</td>
+                                                <td class="text-secondary">@item.DayOfWeek</td>
+                                                <td>
+                                                    @if (item.ActionType != "GIỮ" && item.ActionType != "SÀN ĐÓNG CỬA")
+                                                    {
+                                                        <span class="badge @badgeClass me-2" style="font-size: 0.65rem; padding: 3px 6px;">@item.ActionType</span>
+                                                    }
+                                                    else if (item.ActionType == "GIỮ")
+                                                    {
+                                                        <span class="badge bg-secondary me-2" style="font-size: 0.65rem; padding: 3px 6px;">@item.ActionType</span>
+                                                    }
+                                                    @Html.Raw(System.Text.RegularExpressions.Regex.Replace(item.Description, @"\*\*(.*?)\*\*", "<strong>$1</strong>"))
+                                                </td>
+                                                <td class="@(item.Target.Contains("+") ? "pnl-positive fw-bold" : "text-secondary")">@item.Target</td>
+                                                <td class="text-info fw-bold">@item.CumulativePnL</td>
+                                                <td class="text-secondary" style="font-size: 0.8rem; line-height: 1.4;">@Html.Raw(item.ActualAction)</td>
+                                            </tr>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <tr>
+                                            <td colspan="6" class="text-center text-muted py-3">Chưa có lịch trình giao dịch nào được lập.</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
-    </div>
+    }
+    else
+    {
+        <div class="glass-card mb-4 text-center py-5" style="border: 1px dashed rgba(255, 255, 255, 0.1); background: rgba(255,255,255,0.01);">
+            <div style="font-size: 2.5rem; margin-bottom: 12px;">🧠</div>
+            <h5 class="fw-bold text-white">Chưa có kế hoạch đầu tư AI tổng thể</h5>
+            <p class="text-secondary small mb-3">Vui lòng bấm nút "AI Phân tích và dự đoán kế hoạch" ở góc trên bên phải để bắt đầu thiết lập kế hoạch tối ưu hóa danh mục.</p>
+            <form asp-action="RunPlanAnalysis" method="post" class="d-inline-block">
+                <button type="submit" onclick="showGlobalLoading()" class="btn text-white fw-bold d-flex align-items-center gap-2" style="background: linear-gradient(135deg, #8b5cf6 0%, #3b82f6 100%); border-radius: 8px; padding: 8px 16px; border: none; cursor: pointer;">
+                    🧠 Khởi chạy phân tích AI
+                </button>
+            </form>
+        </div>
+    }
 
     <!-- Position List -->
     @if (!positions.Any())
@@ -451,7 +721,7 @@
                     <div class="stat-grid mb-3">
                         <div class="stat-item">
                             <div class="stat-label">Số lượng</div>
-                            <div class="stat-value">@pos.Quantity.ToString("N0")</div>
+                            <div class="stat-value text-white">@(pos.Quantity == 0 ? "0 (Đã chốt)" : pos.Quantity.ToString("N0"))</div>
                         </div>
                         <div class="stat-item">
                             <div class="stat-label">Giá vốn</div>
@@ -527,6 +797,47 @@
                         }
                     </div>
 
+                    <!-- Active Buy Lots (FIFO Breakdown) -->
+                    @if (analysis != null && analysis.ActiveLots != null && analysis.ActiveLots.Any())
+                    {
+                        <div class="mb-3 p-3 rounded" style="background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.05);">
+                            <div class="d-flex align-items-center gap-2 mb-2">
+                                <span style="font-size: 1rem;">📊</span>
+                                <span style="font-size: 0.75rem; color: var(--accent-cyan); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">Chi tiết các lô mua (FIFO)</span>
+                            </div>
+                            <div class="table-responsive">
+                                <table class="table table-sm table-dark table-hover m-0" style="font-size: 0.82rem; border-color: rgba(255,255,255,0.05);">
+                                    <thead>
+                                        <tr class="text-secondary" style="font-size: 0.75rem; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                            <th>Ngày mua</th>
+                                            <th class="text-end">Số lượng còn</th>
+                                            <th class="text-end">Giá mua (Vốn)</th>
+                                            <th class="text-end">Giá hiện tại</th>
+                                            <th class="text-end">Lãi/Lỗ tạm tính</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var lot in analysis.ActiveLots)
+                                        {
+                                            <tr>
+                                                <td class="text-secondary">@lot.Date.ToString("dd/MM/yyyy HH:mm")</td>
+                                                <td class="text-end fw-semibold">@lot.RemainingQuantity.ToString("N0") <span class="text-secondary" style="font-size: 0.72rem;">/ @lot.OriginalQuantity.ToString("N0") CP</span></td>
+                                                <td class="text-end">@lot.EntryPrice.ToString("N0") đ</td>
+                                                <td class="text-end">@lot.CurrentPrice.ToString("N0") đ</td>
+                                                <td class="text-end fw-bold @(lot.PnL >= 0 ? "pnl-positive" : "pnl-negative")">
+                                                    @(lot.PnL >= 0 ? "+" : "")@lot.PnL.ToString("N0") đ
+                                                    <span style="font-size: 0.72rem; font-weight: normal; margin-left: 2px;">
+                                                        (@(lot.PnLPercent >= 0 ? "+" : "")@lot.PnLPercent.ToString("N2")%)
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    }
+
                     <!-- Target Progress Section -->
                     @if (hasTarget && analysis != null)
                     {
@@ -535,11 +846,11 @@
                                 <div class="target-label">🎯 Mục tiêu lợi nhuận sau bán</div>
                                 <div class="d-flex align-items-center gap-2">
                                     <span style="font-size: 0.85rem; font-weight: 600; color: var(--accent-amber);">
-                                        @pos.TargetProfitAmount.Value.ToString("N0") đ
+                                        Mục tiêu: @pos.TargetProfitAmount.Value.ToString("N0") đ
                                     </span>
                                 </div>
                             </div>
-                            <div class="progress-container" style="height: 10px;">
+                            <div class="progress-container" style="height: 10px; margin-bottom: 8px;">
                                 @{
                                     var progressPct = analysis.ProgressPercent;
                                     var barClass = progressPct >= 100 ? "complete" : progressPct >= 80 ? "warning" : progressPct >= 0 ? "positive" : "negative";
@@ -547,13 +858,30 @@
                                 }
                                 <div class="progress-bar-fill @barClass" style="width: @barWidth%"></div>
                             </div>
-                            <div class="d-flex justify-content-between mt-1" style="font-size: 0.78rem;">
-                                <span class="@(pnl >= 0 ? "pnl-positive" : "pnl-negative")">
-                                    Đạt: @pnl.ToString("N0") đ (@progressPct.ToString("N1")%)
-                                </span>
-                                <span class="text-secondary">
-                                    Còn thiếu: @analysis.RemainingAmount.ToString("N0") đ
-                                </span>
+                            
+                            <div class="d-flex flex-column gap-1 text-secondary" style="font-size: 0.78rem; border-top: 1px dashed rgba(255,255,255,0.05); padding-top: 6px;">
+                                <div class="d-flex justify-content-between">
+                                    <span>Lãi tạm tính (Floating PnL):</span>
+                                    <span class="@(pos.PnL >= 0 ? "pnl-positive" : "pnl-negative") fw-semibold">
+                                        @(pos.PnL >= 0 ? "+" : "")@pos.PnL.ToString("N0") đ
+                                    </span>
+                                </div>
+                                <div class="d-flex justify-content-between">
+                                    <span>Lãi đã hiện thực (Realized PnL):</span>
+                                    <span class="@(analysis.SymbolRealizedPnL >= 0 ? "pnl-positive" : "pnl-negative") fw-semibold">
+                                        @(analysis.SymbolRealizedPnL >= 0 ? "+" : "")@analysis.SymbolRealizedPnL.ToString("N0") đ
+                                    </span>
+                                </div>
+                                <div class="d-flex justify-content-between fw-bold text-white border-top border-secondary border-opacity-20 pt-1" style="font-size: 0.8rem;">
+                                    <span>Lũy kế của mã (Cumulative):</span>
+                                    <span class="@(analysis.SymbolCumulativePnL >= 0 ? "pnl-positive" : "pnl-negative")">
+                                        @(analysis.SymbolCumulativePnL >= 0 ? "+" : "")@analysis.SymbolCumulativePnL.ToString("N0") đ (@progressPct.ToString("N1")%)
+                                    </span>
+                                </div>
+                                <div class="d-flex justify-content-between mt-1 small">
+                                    <span>Còn thiếu:</span>
+                                    <span class="text-warning font-monospace">@analysis.RemainingAmount.ToString("N0") đ</span>
+                                </div>
                             </div>
                         </div>
                     }
@@ -660,19 +988,25 @@
                                 <input type="number" name="expectedHoldDays" value="@(pos.ExpectedHoldDays)"
                                        class="risk-input text-white" style="width: 100px; border-color: rgba(139, 92, 246, 0.3);" placeholder="VD: 15" min="1" />
                             </div>
-                            <div class="d-flex gap-2">
+                            <div class="d-flex flex-wrap gap-2">
                                 <button type="submit" class="btn-save-target" title="Lưu mục tiêu & rủi ro">
                                     💾 Lưu mục tiêu
                                 </button>
-                                <button type="button" onclick="buyMorePosition(@pos.Id, '@pos.Symbol')" class="btn-save-target" title="Mua thêm từ nguồn cố định">
-                                    ➕ Mua thêm
+                                <button type="button" onclick="showAdvancedAnalysis(@pos.Id)" class="btn-save-target" style="background: rgba(139, 92, 246, 0.18); border-color: rgba(139, 92, 246, 0.35); color: #c084fc;" title="Phân tích dữ liệu nâng cao & dự đoán timing">
+                                    🧠 Phân tích nâng cao
                                 </button>
-                                <button type="button" onclick="partialSellPosition(@pos.Id, @currentPrice, '@pos.Symbol', @(analysis?.SuggestedSellQuantity ?? 0))" class="btn-save-target" style="background: rgba(245, 158, 11, 0.18); border-color: rgba(245, 158, 11, 0.35); color: #fcd34d;" title="Bán một phần để khóa lãi">
-                                    🟠 Bán bớt
-                                </button>
-                                <button type="button" onclick="sellPosition(@pos.Id, @currentPrice, '@pos.Symbol')" class="btn-sell">
-                                    📤 Bán
-                                </button>
+                                @if (pos.Quantity > 0)
+                                {
+                                    <button type="button" onclick="buyMorePosition(@pos.Id, '@pos.Symbol')" class="btn-save-target" title="Mua thêm từ nguồn cố định">
+                                        ➕ Mua thêm
+                                    </button>
+                                    <button type="button" onclick="partialSellPosition(@pos.Id, @currentPrice, '@pos.Symbol', @(analysis?.SuggestedSellQuantity ?? 0))" class="btn-save-target" style="background: rgba(245, 158, 11, 0.18); border-color: rgba(245, 158, 11, 0.35); color: #fcd34d;" title="Bán một phần để khóa lãi">
+                                        🟠 Bán bớt
+                                    </button>
+                                    <button type="button" onclick="sellPosition(@pos.Id, @currentPrice, '@pos.Symbol')" class="btn-sell">
+                                        📤 Bán
+                                    </button>
+                                }
                             </div>
                         </div>
                         @if (!hasTarget)
@@ -682,10 +1016,231 @@
                             </div>
                         }
                     </form>
+
+                    <!-- Lịch sử giao dịch chi tiết & Phân tích thời điểm -->
+                    @{
+                        var symbolTransactions = (ViewBag.Transactions as List<StockTransaction> ?? new List<StockTransaction>())
+                            .Where(t => t.Symbol == pos.Symbol)
+                            .OrderBy(t => t.TransactionDate)
+                            .ToList();
+                    }
+                    @if (symbolTransactions.Any())
+                    {
+                        <div class="transaction-section mb-3 mt-3">
+                            <div class="d-flex align-items-center gap-2 mb-2">
+                                <span style="font-size: 1rem;">📜</span>
+                                <span style="font-size: 0.75rem; color: var(--accent-cyan); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">Lịch sử giao dịch chi tiết</span>
+                            </div>
+                            <div class="timeline-container" style="border-left: 2px solid var(--border-color); padding-left: 16px; margin-left: 6px;">
+                                @foreach (var tx in symbolTransactions)
+                                {
+                                    var isBuy = tx.TransactionType == "BUY";
+                                    var dotColor = isBuy ? "var(--accent-green)" : "var(--accent-amber)";
+                                    var actionText = isBuy ? "MUA" : "BÁN";
+                                    var actionClass = isBuy ? "pnl-positive" : "text-warning";
+                                    
+                                    var timingClass = "";
+                                    var timingLabel = "";
+                                    if (tx.TimingScore.HasValue)
+                                    {
+                                        timingClass = tx.TimingScore.Value >= 80m ? "pnl-positive" : tx.TimingScore.Value >= 50m ? "text-warning" : "pnl-negative";
+                                        timingLabel = tx.TimingScore.Value >= 80m ? "Tốt" : tx.TimingScore.Value >= 50m ? "Trung bình" : "Kém";
+                                    }
+
+                                    <div class="timeline-item mb-3" style="position: relative;">
+                                        <div class="timeline-dot" style="position: absolute; left: -21px; top: 4px; width: 10px; height: 10px; border-radius: 50%; background: @dotColor; border: 2px solid var(--bg-dark);"></div>
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <div style="font-size: 0.85rem;">
+                                                <span class="fw-bold @actionClass">
+                                                    @actionText
+                                                </span>
+                                                @tx.Quantity.ToString("N0") CP × @tx.Price.ToString("N0") đ
+                                            </div>
+                                            <div style="font-size: 0.72rem; color: var(--text-secondary);">
+                                                @tx.TransactionDate.ToString("dd/MM/yyyy HH:mm")
+                                            </div>
+                                        </div>
+                                        @if (tx.TransactionType == "SELL")
+                                        {
+                                            <div class="d-flex justify-content-between align-items-center mt-1" style="font-size: 0.78rem;">
+                                                @if (tx.PnlAmount.HasValue)
+                                                {
+                                                    <span class="@(tx.PnlAmount.Value >= 0 ? "pnl-positive" : "pnl-negative")">
+                                                        Lãi/Lỗ: @(tx.PnlAmount.Value >= 0 ? "+" : "")@tx.PnlAmount.Value.ToString("N0") đ
+                                                    </span>
+                                                }
+                                                @if (tx.TimingScore.HasValue)
+                                                {
+                                                    <span style="font-size: 0.72rem; color: var(--text-secondary);">
+                                                        Timing Score: <span class="fw-bold @timingClass">@tx.TimingScore.Value% (@timingLabel)</span>
+                                                    </span>
+                                                }
+                                            </div>
+                                            @if (tx.PriceHighSinceBuy.HasValue && tx.PriceLowSinceBuy.HasValue && tx.PriceHighSinceBuy.Value > tx.PriceLowSinceBuy.Value)
+                                            {
+                                                <div class="price-range-bar mt-2" style="font-size: 0.72rem; color: var(--text-secondary);">
+                                                    <div class="d-flex justify-content-between mb-1" style="font-size: 0.68rem;">
+                                                        <span>Thấp nhất: @tx.PriceLowSinceBuy.Value.ToString("N0") đ</span>
+                                                        <span>Cao nhất: @tx.PriceHighSinceBuy.Value.ToString("N0") đ</span>
+                                                    </div>
+                                                    <div style="width: 100%; height: 4px; background: rgba(255,255,255,0.08); border-radius: 2px; position: relative;">
+                                                        @{
+                                                            var low = tx.PriceLowSinceBuy.Value;
+                                                            var high = tx.PriceHighSinceBuy.Value;
+                                                            var current = tx.Price;
+                                                            var percent = (current - low) / (high - low) * 100m;
+                                                            percent = Math.Clamp(percent, 0m, 100m);
+                                                        }
+                                                        <div style="position: absolute; left: @percent%; top: -2px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent-cyan); transform: translateX(-50%);"></div>
+                                                    </div>
+                                                    <div class="text-center mt-1" style="font-size: 0.65rem; color: var(--text-secondary);">
+                                                        Giá bán @tx.Price.ToString("N0") đ nằm trong dải giá giữ vị thế
+                                                    </div>
+                                                </div>
+                                            }
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
                 </div>
             </div>
         }
     }
+
+    <!-- Danh Mục Vị Thế Đã Đóng / Lịch Sử Đầu Tư -->
+    <div class="glass-card mt-4 mb-4">
+        <h4 class="fw-bold text-white mb-3" style="font-size: 1.1rem;"><span class="gradient-text">Danh mục vị thế đã đóng / Lịch sử đầu tư</span></h4>
+        @{
+            var closedPositions = ViewBag.ClosedPositions as List<TradePosition> ?? new List<TradePosition>();
+        }
+        @if (!closedPositions.Any())
+        {
+            <p class="text-secondary small mb-0">Chưa có vị thế nào được chốt (đã đóng).</p>
+        }
+        else
+        {
+            <div class="row g-3">
+                @foreach (var cp in closedPositions)
+                {
+                    <div class="col-md-4">
+                        <div class="p-3 rounded" style="background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.05);">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <span class="fw-bold fs-5 text-white">@cp.Symbol</span>
+                                <span class="badge bg-secondary">ĐÃ ĐÓNG (0 CP)</span>
+                            </div>
+                            <div class="d-flex justify-content-between mb-1">
+                                <span class="text-secondary" style="font-size: 0.85rem;">Lãi/Lỗ thực tế:</span>
+                                <span class="fw-bold @(cp.PnL >= 0 ? "pnl-positive" : "pnl-negative")">@(cp.PnL >= 0 ? "+" : "")@cp.PnL.ToString("N0") đ</span>
+                            </div>
+                            <div class="d-flex justify-content-between mb-1">
+                                <span class="text-secondary" style="font-size: 0.85rem;">Giá mua TB:</span>
+                                <span class="text-white">@cp.EntryPrice.ToString("N0") đ</span>
+                            </div>
+                            <div class="d-flex justify-content-between">
+                                <span class="text-secondary" style="font-size: 0.85rem;">Đã giữ:</span>
+                                <span class="text-white">@((DateTime.Now - cp.EntryDate).Days) ngày</span>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+
+    <!-- Bảng Lịch Sử Kế Hoạch Đầu Tư Đã Chạy -->
+    <div class="glass-card mt-4 mb-4">
+        <h4 class="fw-bold text-white mb-3" style="font-size: 1.1rem;"><span class="gradient-text">Lịch sử kế hoạch đầu tư đã chạy (Audit Trail)</span></h4>
+        @{
+            var historyPlans = ViewBag.HistoryPlans as List<InvestmentPlan> ?? new List<InvestmentPlan>();
+        }
+        @if (!historyPlans.Any())
+        {
+            <p class="text-secondary small mb-0">Chưa có lịch sử chạy kế hoạch đầu tư nào.</p>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-dark table-hover m-0 align-middle" style="font-size: 0.82rem; border-color: rgba(255,255,255,0.05);">
+                    <thead>
+                        <tr class="text-secondary" style="border-bottom: 1px solid rgba(255,255,255,0.08);">
+                            <th>Ngày chạy</th>
+                            <th>Thời hạn chu kỳ</th>
+                            <th class="text-end">Vốn đầu tư</th>
+                            <th class="text-end">Mục tiêu lãi</th>
+                            <th class="text-end">Lũy kế lúc chạy</th>
+                            <th class="text-end">Còn thiếu</th>
+                            <th>Còn lại</th>
+                            <th class="text-center">Xác suất AI</th>
+                            <th class="text-center">Trạng thái</th>
+                            <th class="text-end">KQ thực tế</th>
+                            <th class="text-center">Hành động</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var plan in historyPlans)
+                        {
+                            var statusBadgeClass = plan.Status switch
+                            {
+                                "Pending" => "bg-secondary text-white-50",
+                                "Active" => "bg-primary text-white",
+                                "Success" => "bg-success text-white",
+                                "Failed" => "bg-danger text-white",
+                                "Expired" => "bg-warning text-dark",
+                                "CompletedEarly" => "bg-info text-dark",
+                                _ => "bg-dark text-secondary"
+                            };
+                            var statusLabel = plan.Status switch
+                            {
+                                "Pending" => "Chờ xử lý",
+                                "Active" => "Đang chạy",
+                                "Success" => "Thành công",
+                                "Failed" => "Thất bại",
+                                "Expired" => "Hết hạn",
+                                "CompletedEarly" => "Hoàn thành sớm",
+                                _ => plan.Status
+                            };
+                            <tr>
+                                <td class="text-secondary">@plan.RunDate.ToString("dd/MM/yyyy HH:mm")</td>
+                                <td>@plan.StartDate.ToString("dd/MM/yyyy") - @plan.EndDate.ToString("dd/MM/yyyy")</td>
+                                <td class="text-end font-monospace">@plan.Capital.ToString("N0") đ</td>
+                                <td class="text-end font-monospace text-warning">@plan.TargetProfit.ToString("N0") đ</td>
+                                <td class="text-end font-monospace @(plan.ActualProfit >= 0 ? "pnl-positive" : "pnl-negative")">
+                                    @(plan.ActualProfit >= 0 ? "+" : "")@plan.ActualProfit.ToString("N0") đ
+                                </td>
+                                <td class="text-end font-monospace text-secondary">@plan.RemainingProfitNeeded.ToString("N0") đ</td>
+                                <td>@plan.DaysRemainingAtRun ngày</td>
+                                <td class="text-center fw-bold" style="color: @(plan.SuccessProbability >= 80 ? "var(--accent-green)" : plan.SuccessProbability >= 50 ? "var(--accent-amber)" : "var(--accent-red)");">
+                                    @plan.SuccessProbability.ToString("N1")%
+                                </td>
+                                <td class="text-center">
+                                    <span class="badge @statusBadgeClass px-2 py-1" style="font-size: 0.7rem; border-radius: 4px;">@statusLabel</span>
+                                </td>
+                                <td class="text-end font-monospace">
+                                    @if (plan.FinalProfit.HasValue)
+                                    {
+                                        <span class="@(plan.FinalProfit.Value >= 0 ? "pnl-positive" : "pnl-negative") fw-bold">
+                                            @(plan.FinalProfit.Value >= 0 ? "+" : "")@plan.FinalProfit.Value.ToString("N0") đ
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">-</span>
+                                    }
+                                </td>
+                                <td class="text-center">
+                                    <button type="button" onclick="showHistoricalPlanDetails(@plan.Id)" class="btn-save-target" style="padding: 4px 10px; font-size: 0.72rem;">
+                                        🔍 Chi tiết
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
 </div>
 
 <!-- Hidden form for selling -->
@@ -704,7 +1259,465 @@
     <input type="hidden" name="currentPrice" id="partialSellPrice" />
 </form>
 
+<!-- Modal Phân Tích Dữ Liệu Nâng Cao -->
+<div id="advancedAnalysisModal" class="modal-overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(5, 5, 10, 0.85); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); z-index: 1050; align-items: center; justify-content: center; transition: all 0.3s ease;">
+    <div class="modal-glass-card" style="background: rgba(20, 22, 40, 0.95); border: 1px solid rgba(139, 92, 246, 0.25); border-radius: 20px; width: 90%; max-width: 800px; max-height: 85vh; overflow-y: auto; padding: 30px; box-shadow: 0 20px 50px rgba(0,0,0,0.6); position: relative; color: var(--text-primary);">
+        
+        <!-- Close Button -->
+        <button type="button" onclick="closeAdvancedAnalysis()" style="position: absolute; top: 20px; right: 20px; background: none; border: none; color: var(--text-secondary); font-size: 1.8rem; cursor: pointer; transition: color 0.2s;" onmouseover="this.style.color='var(--accent-red)'" onmouseout="this.style.color='var(--text-secondary)'">&times;</button>
+        
+        <!-- Header -->
+        <div class="d-flex align-items-center gap-3 mb-4">
+            <span style="font-size: 2.2rem; filter: drop-shadow(0 0 10px rgba(139, 92, 246, 0.4));">🧠</span>
+            <div>
+                <h4 class="mb-0 fw-bold" style="color: #fff; font-size: 1.4rem; letter-spacing: -0.02em;">Phân Tích Dữ Liệu Nâng Cao & Phỏng Đoán Timing</h4>
+                <div style="font-size: 0.82rem; color: var(--text-secondary);">Mã chứng khoán: <span id="modalSymbol" class="fw-bold text-white" style="font-size: 0.95rem;">---</span> | Cố cố vấn thời điểm tối ưu</div>
+            </div>
+        </div>
+
+        <!-- Position Stats Row -->
+        <div class="row g-3 mb-4" style="background: rgba(255,255,255,0.01); border: 1px solid rgba(255,255,255,0.05); border-radius: 14px; padding: 16px; margin: 0;">
+            <div class="col-md-3 col-6 text-center">
+                <div style="font-size: 0.72rem; color: var(--text-secondary); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.05em;">Đang nắm giữ</div>
+                <div id="modalQty" class="fw-bold text-white" style="font-size: 1.15rem;">-</div>
+            </div>
+            <div class="col-md-3 col-6 text-center" style="border-left: 1px solid rgba(255,255,255,0.05);">
+                <div style="font-size: 0.72rem; color: var(--text-secondary); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.05em;">Giá vốn bình quân</div>
+                <div id="modalEntryPrice" class="fw-bold text-white" style="font-size: 1.15rem;">-</div>
+            </div>
+            <div class="col-md-3 col-6 text-center" style="border-left: 1px solid rgba(255,255,255,0.05);">
+                <div style="font-size: 0.72rem; color: var(--text-secondary); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.05em;">Giá hiện tại</div>
+                <div id="modalCurrentPrice" class="fw-bold text-info" style="font-size: 1.15rem;">-</div>
+            </div>
+            <div class="col-md-3 col-6 text-center" style="border-left: 1px solid rgba(255,255,255,0.05);">
+                <div style="font-size: 0.72rem; color: var(--text-secondary); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.05em;">Lãi / Lỗ hiện hữu</div>
+                <div id="modalPnL" class="fw-bold" style="font-size: 1.15rem;">-</div>
+            </div>
+        </div>
+
+        <!-- AI Opinion & Strategy -->
+        <div class="mb-4" style="background: rgba(139, 92, 246, 0.03); border: 1px solid rgba(139, 92, 246, 0.12); border-radius: 14px; padding: 20px;">
+            <div class="d-flex align-items-center justify-content-between mb-3">
+                <div class="d-flex align-items-center gap-2">
+                    <span style="font-size: 1.2rem;">🤖</span>
+                    <span class="fw-bold" style="color: var(--accent-purple); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em;">Khuyến nghị từ AI Trading Copilot</span>
+                </div>
+                <span id="modalAiSignal" class="ai-signal px-3 py-1-5" style="font-size: 0.8rem; font-weight: 700; border-radius: 8px;">---</span>
+            </div>
+            <div class="mb-2" style="font-size: 0.8rem; color: var(--text-secondary);">
+                Chiến lược áp dụng: <span id="modalStrategy" class="text-white fw-bold">---</span>
+            </div>
+            <p id="modalRationale" class="mb-0 text-white-50" style="font-size: 0.88rem; line-height: 1.6; font-style: italic;">---</p>
+        </div>
+
+        <!-- Advanced Prediction Panels -->
+        <div class="mb-4">
+            <h5 class="fw-bold text-white mb-3" style="font-size: 1.05rem; letter-spacing: -0.01em;">🎯 Dự đoán & Đề xuất Timing Hành động</h5>
+            
+            <div class="d-flex flex-column gap-3">
+                <!-- 1. BÁN HẾT -->
+                <div class="p-3" style="background: rgba(239, 68, 68, 0.02); border: 1px solid rgba(239, 68, 68, 0.12); border-radius: 12px;">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="fw-bold text-danger" style="font-size: 0.85rem; letter-spacing: 0.02em;">🔴 PHƯƠNG ÁN BÁN TOÀN BỘ (CLOSE)</span>
+                        <span id="modalSellTiming" class="small px-2 py-0-5 rounded" style="background: rgba(239, 68, 68, 0.12); color: var(--accent-red); font-size: 0.7rem; font-weight: 600;">--</span>
+                    </div>
+                    <div class="small text-secondary mb-2" style="font-size: 0.78rem;">
+                        Mốc chốt lời: <span id="modalSellTp" class="text-success fw-bold">--</span> | Ngưỡng cắt lỗ: <span id="modalSellSl" class="text-danger fw-bold">--</span>
+                    </div>
+                    <p id="modalSellDesc" class="mb-0 text-white-50" style="font-size: 0.82rem; line-height: 1.5;">--</p>
+                </div>
+
+                <!-- 2. BÁN 1 PHẦN -->
+                <div class="p-3" style="background: rgba(245, 158, 11, 0.02); border: 1px solid rgba(245, 158, 11, 0.12); border-radius: 12px;">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="fw-bold text-warning" style="font-size: 0.85rem; letter-spacing: 0.02em;">🟠 PHƯƠNG ÁN BÁN BỚT (PARTIAL SELL)</span>
+                        <span id="modalPartialSellTiming" class="small px-2 py-0-5 rounded" style="background: rgba(245, 158, 11, 0.12); color: var(--accent-amber); font-size: 0.7rem; font-weight: 600;">--</span>
+                    </div>
+                    <div class="small text-secondary mb-2" style="font-size: 0.78rem;">
+                        Gợi ý khối lượng: bán bớt <span id="modalPartialSellQty" class="text-warning fw-bold">--</span> CP | Thu về khoảng: <span id="modalPartialSellVal" class="text-warning fw-bold">--</span> | Lãi bỏ túi: <span id="modalPartialSellProfit" class="text-success fw-bold">--</span>
+                    </div>
+                    <p id="modalPartialSellDesc" class="mb-0 text-white-50" style="font-size: 0.82rem; line-height: 1.5;">--</p>
+                </div>
+
+                <!-- 3. MUA THÊM -->
+                <div class="p-3" style="background: rgba(16, 185, 129, 0.02); border: 1px solid rgba(16, 185, 129, 0.12); border-radius: 12px;">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="fw-bold text-success" style="font-size: 0.85rem; letter-spacing: 0.02em;">🟢 PHƯƠNG ÁN MUA THÊM (PARTIAL BUY)</span>
+                        <span id="modalPartialBuyTiming" class="small px-2 py-0-5 rounded" style="background: rgba(16, 185, 129, 0.12); color: var(--accent-green); font-size: 0.7rem; font-weight: 600;">--</span>
+                    </div>
+                    <div class="small text-secondary mb-2" style="font-size: 0.78rem;">
+                        Hạn mức vốn còn lại: <span id="modalPartialBuyLimit" class="text-white fw-bold">--</span> | Đề xuất mua thêm: <span id="modalPartialBuyQty" class="text-success fw-bold">--</span> CP (<span id="modalPartialBuyVal" class="text-success fw-bold">--</span>)
+                    </div>
+                    <p id="modalPartialBuyDesc" class="mb-0 text-white-50" style="font-size: 0.82rem; line-height: 1.5;">--</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- History timing performance -->
+        <div id="modalHistoryTimingRow" class="mb-4" style="display:none; background: rgba(6, 182, 212, 0.02); border: 1px solid rgba(6, 182, 212, 0.12); border-radius: 12px; padding: 15px;">
+            <div class="d-flex align-items-center gap-2 mb-2">
+                <span style="font-size: 1.1rem;">📈</span>
+                <span class="fw-bold" style="font-size: 0.8rem; color: var(--accent-cyan); text-transform: uppercase; letter-spacing: 0.05em;">Hiệu suất giao dịch lịch sử của mã này</span>
+            </div>
+            <p class="mb-0 text-white-50" style="font-size: 0.82rem; line-height: 1.5;">
+                Dựa trên lịch sử các giao dịch đóng trước đó, điểm bán trung bình của bạn đối với mã này đạt <span id="modalAvgTimingScore" class="fw-bold text-info" style="font-size: 0.9rem;">--</span>. 
+                (Điểm càng cao gần 100% chứng tỏ bạn có xu hướng chốt lời/cắt lỗ đúng đắn và tối ưu hóa lợi nhuận tốt).
+            </p>
+        </div>
+
+        <!-- Footer Buttons -->
+        <div class="d-flex justify-content-end gap-2 mt-4 pt-3" style="border-top: 1px solid rgba(255,255,255,0.08);">
+            <button type="button" onclick="closeAdvancedAnalysis()" class="btn-save-target" style="background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.1); color: var(--text-secondary);">
+                Đóng
+            </button>
+            <button type="button" id="modalBtnBuy" class="btn-save-target" style="display:none;">
+                ➕ Mua Thêm Ngay
+            </button>
+            <button type="button" id="modalBtnPartialSell" class="btn-save-target" style="background: rgba(245, 158, 11, 0.18); border-color: rgba(245, 158, 11, 0.35); color: #fcd34d; display:none;">
+                🟠 Bán Bớt Ngay
+            </button>
+            <button type="button" id="modalBtnSell" class="btn-sell" style="display:none;">
+                📤 Bán Hết Ngay
+            </button>
+        </div>
+
+    </div>
+</div>
+
+<!-- Modal Chi Tiết Kế Hoạch Đầu Tư Lịch Sử -->
+<div id="historicalPlanModal" class="modal-overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(5, 5, 10, 0.85); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); z-index: 1050; align-items: center; justify-content: center; transition: all 0.3s ease;">
+    <div class="modal-glass-card" style="background: rgba(20, 22, 40, 0.95); border: 1px solid rgba(139, 92, 246, 0.25); border-radius: 20px; width: 90%; max-width: 900px; max-height: 85vh; overflow-y: auto; padding: 30px; box-shadow: 0 20px 50px rgba(0,0,0,0.6); position: relative; color: var(--text-primary);">
+        
+        <!-- Close Button -->
+        <button type="button" onclick="closeHistoricalPlan()" style="position: absolute; top: 20px; right: 20px; background: none; border: none; color: var(--text-secondary); font-size: 1.8rem; cursor: pointer; transition: color 0.2s;" onmouseover="this.style.color='var(--accent-red)'" onmouseout="this.style.color='var(--text-secondary)'">&times;</button>
+        
+        <!-- Header -->
+        <div class="d-flex align-items-center gap-3 mb-4">
+            <span style="font-size: 2.2rem; filter: drop-shadow(0 0 10px rgba(139, 92, 246, 0.4));">📜</span>
+            <div>
+                <h4 class="mb-0 fw-bold" style="color: #fff; font-size: 1.4rem; letter-spacing: -0.02em;">Chi Tiết Kế Hoạch Đầu Tư Lịch Sử</h4>
+                <div style="font-size: 0.82rem; color: var(--text-secondary);">
+                    Ngày chạy: <span id="histRunDate" class="text-white fw-bold">---</span> | Phiên bản: <span id="histAiVersion" class="text-white">---</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Plan Meta Row -->
+        <div class="row g-3 mb-4" style="background: rgba(255,255,255,0.015); border: 1px solid rgba(255,255,255,0.05); border-radius: 14px; padding: 16px; margin: 0; font-size: 0.85rem;">
+            <div class="col-md-3 col-6 text-center">
+                <div style="font-size: 0.72rem; color: var(--text-secondary); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.05em;">Vốn đầu tư</div>
+                <div id="histCapital" class="fw-bold text-white" style="font-size: 1.1rem;">-</div>
+            </div>
+            <div class="col-md-3 col-6 text-center" style="border-left: 1px solid rgba(255,255,255,0.05);">
+                <div style="font-size: 0.72rem; color: var(--text-secondary); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.05em;">Mục tiêu lãi</div>
+                <div id="histTarget" class="fw-bold text-warning" style="font-size: 1.1rem;">-</div>
+            </div>
+            <div class="col-md-3 col-6 text-center" style="border-left: 1px solid rgba(255,255,255,0.05);">
+                <div style="font-size: 0.72rem; color: var(--text-secondary); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.05em;">Lũy kế lúc chạy</div>
+                <div id="histActual" class="fw-bold text-info" style="font-size: 1.1rem;">-</div>
+            </div>
+            <div class="col-md-3 col-6 text-center" style="border-left: 1px solid rgba(255,255,255,0.05);">
+                <div style="font-size: 0.72rem; color: var(--text-secondary); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.05em;">Trạng thái</div>
+                <div><span id="histStatus" class="badge bg-primary px-2 py-1" style="font-size: 0.75rem;">-</span></div>
+            </div>
+        </div>
+
+        <div class="row g-3 mb-4" style="font-size: 0.85rem;">
+            <div class="col-md-4">
+                <div class="p-3 rounded h-100" style="background: rgba(255, 255, 255, 0.01); border: 1px solid rgba(255, 255, 255, 0.04);">
+                    <div style="font-size: 0.72rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">Thời hạn chu kỳ</div>
+                    <div id="histTimeline" class="fw-bold text-white">-</div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="p-3 rounded h-100" style="background: rgba(255, 255, 255, 0.01); border: 1px solid rgba(255, 255, 255, 0.04);">
+                    <div style="font-size: 0.72rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">Số ngày còn lại lúc chạy</div>
+                    <div id="histDaysRemaining" class="fw-bold text-danger">- ngày</div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="p-3 rounded h-100" style="background: rgba(255, 255, 255, 0.01); border: 1px solid rgba(255, 255, 255, 0.04);">
+                    <div style="font-size: 0.72rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">Xác suất AI dự đoán</div>
+                    <div class="fw-bold text-success"><span id="histProbability">-</span>%</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Summary -->
+        <div class="p-3 rounded mb-4" style="background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.05);">
+            <div class="fw-bold text-white mb-1" style="font-size: 0.85rem; color: var(--accent-cyan) !important;">📝 Tóm tắt kế hoạch hành động:</div>
+            <p id="histSummary" class="m-0 text-secondary" style="font-size: 0.85rem; line-height: 1.5;"></p>
+        </div>
+
+        <div class="row g-3 mb-4">
+            <!-- Actions Table -->
+            <div class="col-md-7">
+                <div class="p-3 rounded h-100" style="background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.05);">
+                    <div class="fw-bold text-white mb-2" style="font-size: 0.85rem; color: var(--accent-purple) !important;">🔄 Đề xuất điều chuyển vốn & Giao dịch:</div>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-dark table-hover m-0" style="font-size: 0.8rem; border-color: rgba(255,255,255,0.03);">
+                            <thead>
+                                <tr class="text-secondary" style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                    <th>Mã CP</th>
+                                    <th>Hành động</th>
+                                    <th>Chi tiết điều chuyển vốn</th>
+                                </tr>
+                            </thead>
+                            <tbody id="histActionsBody">
+                                <!-- Dynamic JS injection -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Contributions -->
+            <div class="col-md-5">
+                <div class="p-3 rounded h-100" style="background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.05);">
+                    <div class="fw-bold text-white mb-2" style="font-size: 0.85rem; color: var(--accent-amber) !important;">💰 Dự báo đóng góp lợi nhuận:</div>
+                    <div id="histContributionsContainer" class="d-flex flex-column gap-2">
+                        <!-- Dynamic JS injection -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Lịch trình giao dịch tối ưu từng ngày (Daily Action Calendar) cho kế hoạch lịch sử -->
+        <div class="p-3 rounded mb-4" style="background: rgba(139, 92, 246, 0.02); border: 1px solid rgba(139, 92, 246, 0.1);">
+            <div class="fw-bold text-white mb-2" style="font-size: 0.85rem; color: var(--accent-cyan) !important;">📅 Lịch trình giao dịch tối ưu từng ngày (Daily Action Calendar):</div>
+            <div class="table-responsive">
+                <table class="table table-sm table-dark table-hover m-0" style="font-size: 0.8rem; border-color: rgba(255,255,255,0.03);">
+                    <thead>
+                        <tr class="text-secondary" style="border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 0.75rem;">
+                            <th style="width: 8%;">Ngày</th>
+                            <th style="width: 10%;">Thứ</th>
+                            <th style="width: 32%;">Hành động đề xuất (Step-by-step)</th>
+                            <th style="width: 15%;">Mục tiêu giao dịch</th>
+                            <th style="width: 10%;">PnL tích lũy</th>
+                            <th style="width: 25%;">Hành động thực tế</th>
+                        </tr>
+                    </thead>
+                    <tbody id="histDailyCalendarBody">
+                        <!-- Dynamic JS injection -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Rationale -->
+        <div class="p-3 rounded mb-4" style="background: rgba(139, 92, 246, 0.015); border: 1px solid rgba(139, 92, 246, 0.05);">
+            <div class="fw-bold text-white mb-1" style="font-size: 0.85rem; color: var(--accent-green) !important;">📊 Phân tích cơ sở & Quản trị rủi ro:</div>
+            <p id="histRationale" class="m-0 text-secondary" style="font-size: 0.82rem; line-height: 1.5; font-style: italic;"></p>
+        </div>
+
+        <!-- Footer Buttons -->
+        <div class="d-flex justify-content-end gap-2 pt-3" style="border-top: 1px solid rgba(255,255,255,0.08);">
+            <button type="button" onclick="closeHistoricalPlan()" class="btn-save-target" style="background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.1); color: var(--text-secondary);">
+                Đóng
+            </button>
+        </div>
+
+    </div>
+</div>
+
+<!-- Loading Overlay toàn trang cho AI Plan -->
+<div id="aiPlanLoadingOverlay" class="modal-overlay" style="display: @(ViewBag.PlanStatus == "Pending" ? "flex" : "none"); position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(9, 10, 15, 0.85); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); z-index: 2000; align-items: center; justify-content: center; flex-direction: column;">
+    <div class="text-center p-5 rounded-4" style="background: rgba(20, 22, 37, 0.8); border: 1px solid rgba(139, 92, 246, 0.2); max-width: 450px;">
+        <div class="spinner-grow text-primary mb-4" style="width: 3.5rem; height: 3.5rem; background-color: var(--accent-purple);" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+        <h4 class="fw-bold text-white mb-2">🧠 AI Trading Copilot</h4>
+        <p id="loadingStatusText" class="text-secondary small mb-3">Đang kết nối AI Copilot và thu thập dữ liệu vị thế...</p>
+        <div class="progress" style="height: 6px; background: rgba(255,255,255,0.05); border-radius: 3px;">
+            <div id="loadingProgressBar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 15%; background-color: var(--accent-purple); height: 100%;"></div>
+        </div>
+    </div>
+</div>
+
 <script>
+    // Hiển thị loading overlay với text chạy động
+    function showGlobalLoading() {
+        const overlay = document.getElementById('aiPlanLoadingOverlay');
+        overlay.style.display = 'flex';
+        
+        const texts = [
+            "Đang thu thập dữ liệu vị thế và phân bổ ngân sách...",
+            "Đang đóng băng snapshot danh mục đầu tư...",
+            "Đang thiết lập kết nối bảo mật tới AI Copilot Engine...",
+            "AI đang phân tích dải kỹ thuật cổ phiếu (RSI, Trend)...",
+            "AI đang hoạch định điều phối ngân sách tối ưu cuối kỳ...",
+            "AI đang tính toán xác suất đạt mục tiêu tổng thể...",
+            "Đang hoàn thiện đề xuất giao dịch và lưu vào nhật ký..."
+        ];
+        
+        let i = 0;
+        const textEl = document.getElementById('loadingStatusText');
+        const progressEl = document.getElementById('loadingProgressBar');
+        
+        const textInterval = setInterval(() => {
+            if (i < texts.length) {
+                textEl.innerText = texts[i];
+                progressEl.style.width = ((i + 1) * 100 / texts.length) + '%';
+                i++;
+            } else {
+                clearInterval(textInterval);
+            }
+        }, 3000);
+    }
+
+    // Polling trạng thái Pending của kế hoạch
+    document.addEventListener('DOMContentLoaded', function () {
+        const planStatus = "@ViewBag.PlanStatus";
+        const planId = "@ViewBag.PlanId";
+        
+        if (planStatus === "Pending" && planId !== "0") {
+            showGlobalLoading();
+            
+            const interval = setInterval(() => {
+                fetch('/Copilot/CheckPlanStatus?id=' + planId)
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.status !== "Pending") {
+                            clearInterval(interval);
+                            window.location.reload();
+                        }
+                    })
+                    .catch(err => console.error("Lỗi polling: " + err));
+            }, 3000);
+        }
+    });
+
+    // Xem chi tiết kế hoạch lịch sử
+    function showHistoricalPlanDetails(id) {
+        const modal = document.getElementById('historicalPlanModal');
+        modal.style.display = 'flex';
+        
+        // Reset fields
+        document.getElementById('histRunDate').innerText = 'Đang tải...';
+        document.getElementById('histAiVersion').innerText = '---';
+        document.getElementById('histCapital').innerText = '-';
+        document.getElementById('histTarget').innerText = '-';
+        document.getElementById('histActual').innerText = '-';
+        
+        const statusEl = document.getElementById('histStatus');
+        statusEl.innerText = '-';
+        statusEl.className = 'badge';
+        
+        document.getElementById('histTimeline').innerText = '-';
+        document.getElementById('histDaysRemaining').innerText = '-';
+        document.getElementById('histProbability').innerText = '-';
+        document.getElementById('histSummary').innerText = 'Đang tải phân tích...';
+        document.getElementById('histActionsBody').innerHTML = '<tr><td colspan="3" class="text-center text-muted">Đang tải...</td></tr>';
+        document.getElementById('histDailyCalendarBody').innerHTML = '<tr><td colspan="5" class="text-center text-muted">Đang tải...</td></tr>';
+        document.getElementById('histContributionsContainer').innerHTML = '<span class="text-muted">Đang tải...</span>';
+        document.getElementById('histRationale').innerText = 'Đang tải lập luận...';
+        
+        fetch('/Copilot/GetPlanDetails?id=' + id)
+            .then(res => {
+                if (!res.ok) throw new Error("Không thể tải chi tiết kế hoạch.");
+                return res.json();
+            })
+            .then(data => {
+                document.getElementById('histRunDate').innerText = data.runDateStr;
+                document.getElementById('histAiVersion').innerText = data.aiVersion;
+                document.getElementById('histCapital').innerText = data.capitalStr;
+                document.getElementById('histTarget').innerText = data.targetProfitStr;
+                document.getElementById('histActual').innerText = data.actualProfitStr;
+                
+                statusEl.innerText = data.status;
+                let badgeClass = 'bg-secondary';
+                if (data.status === 'Đang chạy') badgeClass = 'bg-primary';
+                else if (data.status === 'Thành công') badgeClass = 'bg-success';
+                else if (data.status === 'Thất bại') badgeClass = 'bg-danger';
+                else if (data.status === 'Hết hạn') badgeClass = 'bg-warning text-dark';
+                else if (data.status === 'Hoàn thành sớm') badgeClass = 'bg-info text-dark';
+                statusEl.className = 'badge ' + badgeClass + ' px-2 py-1';
+                
+                document.getElementById('histTimeline').innerText = data.timelineStr;
+                document.getElementById('histDaysRemaining').innerText = data.daysRemainingAtRun + ' ngày';
+                document.getElementById('histProbability').innerText = data.successProbability.toFixed(1);
+                document.getElementById('histSummary').innerText = data.summary;
+                document.getElementById('histRationale').innerText = data.rationale;
+                
+                // Actions rendering
+                let actionsHtml = '';
+                if (data.actions && data.actions.length > 0) {
+                    data.actions.forEach(act => {
+                        actionsHtml += `
+                            <tr>
+                                <td class="fw-bold text-white">${act.ticker}</td>
+                                <td><span class="badge" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); font-size: 0.72rem; color: #fff; padding: 3px 6px; display: inline-block;">${act.action}</span></td>
+                                <td class="text-secondary">${act.description}</td>
+                            </tr>
+                        `;
+                    });
+                } else {
+                    actionsHtml = '<tr><td colspan="3" class="text-muted small">Không có đề xuất giao dịch nào.</td></tr>';
+                }
+                document.getElementById('histActionsBody').innerHTML = actionsHtml;
+
+                // Daily Calendar rendering
+                let dailyCalendarHtml = '';
+                if (data.dailyCalendar && data.dailyCalendar.length > 0) {
+                    data.dailyCalendar.forEach(item => {
+                        let badgeClass = 'bg-secondary';
+                        if (item.actionType === 'MUA' || item.actionType === 'MUA THÊM') badgeClass = 'bg-success';
+                        else if (item.actionType === 'BÁN') badgeClass = 'bg-danger';
+                        else if (item.actionType === 'CƠ CẤU') badgeClass = 'bg-warning text-dark';
+                        else if (item.actionType === 'TẤT TOÁN') badgeClass = 'bg-primary';
+                        else if (item.actionType === 'SÀN ĐÓNG CỬA') badgeClass = 'bg-secondary';
+
+                        let badgeHtml = (item.actionType !== 'GIỮ' && item.actionType !== 'SÀN ĐÓNG CỬA') 
+                            ? `<span class="badge ${badgeClass} me-2" style="font-size: 0.65rem; padding: 3px 6px;">${item.actionType}</span>` 
+                            : (item.actionType === 'GIỮ' ? `<span class="badge bg-secondary me-2" style="font-size: 0.65rem; padding: 3px 6px;">${item.actionType}</span>` : '');
+
+                        let formattedDesc = item.description.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                        let targetClass = item.target.includes('+') ? 'pnl-positive fw-bold' : 'text-secondary';
+
+                        dailyCalendarHtml += `
+                            <tr>
+                                <td class="text-white fw-bold">${item.date}</td>
+                                <td class="text-secondary">${item.dayOfWeek}</td>
+                                <td>${badgeHtml}${formattedDesc}</td>
+                                <td class="${targetClass}">${item.target}</td>
+                                <td class="text-info fw-bold">${item.cumulativePnL}</td>
+                            </tr>
+                        `;
+                    });
+                } else {
+                    dailyCalendarHtml = '<tr><td colspan="5" class="text-muted small text-center">Không có lịch trình giao dịch nào.</td></tr>';
+                }
+                document.getElementById('histDailyCalendarBody').innerHTML = dailyCalendarHtml;
+                
+                // Contributions rendering
+                let contribHtml = '';
+                if (data.expectedContributions && data.expectedContributions.length > 0) {
+                    data.expectedContributions.forEach(con => {
+                        contribHtml += `
+                            <div class="p-2 rounded" style="background: rgba(255, 255, 255, 0.015); border: 1px solid rgba(255, 255, 255, 0.03);">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <span class="fw-bold text-white" style="font-size: 0.82rem;">${con.ticker}</span>
+                                    <span class="pnl-positive fw-bold" style="font-size: 0.82rem;">+${con.expectedProfit.toLocaleString()} đ</span>
+                                </div>
+                                <div class="text-secondary mt-1" style="font-size: 0.74rem;">${con.description}</div>
+                            </div>
+                        `;
+                    });
+                } else {
+                    contribHtml = '<span class="text-muted small">Không có dự báo đóng góp.</span>';
+                }
+                document.getElementById('histContributionsContainer').innerHTML = contribHtml;
+            })
+            .catch(err => {
+                console.error(err);
+                document.getElementById('histSummary').innerText = 'Lỗi tải dữ liệu kế hoạch: ' + err.message;
+            });
+    }
+
+    function closeHistoricalPlan() {
+        document.getElementById('historicalPlanModal').style.display = 'none';
+    }
+
     document.addEventListener('DOMContentLoaded', function () {
         const numberInputs = document.querySelectorAll('.number-format');
         
@@ -781,5 +1794,144 @@
             document.getElementById('partialSellPrice').value = price;
             document.getElementById('partialSellForm').submit();
         }
+    }
+
+    function showAdvancedAnalysis(id) {
+        const modal = document.getElementById('advancedAnalysisModal');
+        modal.style.display = 'flex';
+        
+        // Reset modal fields
+        document.getElementById('modalSymbol').innerText = 'Đang tải...';
+        document.getElementById('modalQty').innerText = '-';
+        document.getElementById('modalEntryPrice').innerText = '-';
+        document.getElementById('modalCurrentPrice').innerText = '-';
+        document.getElementById('modalPnL').innerText = '-';
+        document.getElementById('modalAiSignal').innerText = '...';
+        document.getElementById('modalStrategy').innerText = '...';
+        document.getElementById('modalRationale').innerText = 'Đang chạy mô hình AI phân tích dải giá & đối chiếu lịch sử giao dịch...';
+        
+        // Reset suggestions
+        document.getElementById('modalSellTiming').innerText = '--';
+        document.getElementById('modalSellTp').innerText = '--';
+        document.getElementById('modalSellSl').innerText = '--';
+        document.getElementById('modalSellDesc').innerText = '--';
+        document.getElementById('modalPartialSellTiming').innerText = '--';
+        document.getElementById('modalPartialSellQty').innerText = '--';
+        document.getElementById('modalPartialSellVal').innerText = '--';
+        document.getElementById('modalPartialSellProfit').innerText = '--';
+        document.getElementById('modalPartialSellDesc').innerText = '--';
+        document.getElementById('modalPartialBuyTiming').innerText = '--';
+        document.getElementById('modalPartialBuyLimit').innerText = '--';
+        document.getElementById('modalPartialBuyQty').innerText = '--';
+        document.getElementById('modalPartialBuyVal').innerText = '--';
+        document.getElementById('modalPartialBuyDesc').innerText = '--';
+        
+        document.getElementById('modalBtnBuy').style.display = 'none';
+        document.getElementById('modalBtnPartialSell').style.display = 'none';
+        document.getElementById('modalBtnSell').style.display = 'none';
+        document.getElementById('modalHistoryTimingRow').style.display = 'none';
+        
+        // Fetch data
+        fetch('/Copilot/AdvancedAnalysis?id=' + id)
+            .then(response => {
+                if (!response.ok) throw new Error('Không thể tải phân tích.');
+                return response.json();
+            })
+            .then(data => {
+                document.getElementById('modalSymbol').innerText = data.symbol;
+                document.getElementById('modalQty').innerText = data.quantity.toLocaleString();
+                document.getElementById('modalEntryPrice').innerText = data.entryPrice.toLocaleString() + ' đ';
+                document.getElementById('modalCurrentPrice').innerText = data.currentPrice.toLocaleString() + ' đ';
+                
+                // PnL formatting
+                const pnlEl = document.getElementById('modalPnL');
+                pnlEl.innerText = (data.pnL >= 0 ? '+' : '') + data.pnL.toLocaleString() + ' đ (' + data.pnlPercent.toFixed(2) + '%)';
+                pnlEl.className = 'fw-bold ' + (data.pnL >= 0 ? 'pnl-positive' : 'pnl-negative');
+                
+                // AI signal badge color
+                const signalEl = document.getElementById('modalAiSignal');
+                signalEl.innerText = data.aiSignal;
+                signalEl.className = 'ai-signal px-3 py-1-5';
+                if (data.aiSignal === 'SELL') {
+                    signalEl.style.background = 'rgba(239, 68, 68, 0.2)';
+                    signalEl.style.color = 'var(--accent-red)';
+                } else if (data.aiSignal === 'BUY') {
+                    signalEl.style.background = 'rgba(16, 185, 129, 0.2)';
+                    signalEl.style.color = 'var(--accent-green)';
+                } else {
+                    signalEl.style.background = 'rgba(59, 130, 246, 0.2)';
+                    signalEl.style.color = 'var(--accent-blue)';
+                }
+                
+                document.getElementById('modalStrategy').innerText = data.strategyApplied;
+                document.getElementById('modalRationale').innerText = data.aiRationale;
+                
+                // Sell suggestion
+                document.getElementById('modalSellTiming').innerText = data.sellSuggestion.timing;
+                document.getElementById('modalSellTp').innerText = data.sellSuggestion.targetPrice.toLocaleString() + ' đ';
+                document.getElementById('modalSellSl').innerText = data.sellSuggestion.stopLossPrice.toLocaleString() + ' đ';
+                document.getElementById('modalSellDesc').innerText = data.sellSuggestion.description;
+                
+                // Partial sell suggestion
+                document.getElementById('modalPartialSellTiming').innerText = data.partialSellSuggestion.timing;
+                document.getElementById('modalPartialSellQty').innerText = data.partialSellSuggestion.quantity.toLocaleString();
+                document.getElementById('modalPartialSellVal').innerText = data.partialSellSuggestion.estimatedValue.toLocaleString() + ' đ';
+                document.getElementById('modalPartialSellProfit').innerText = (data.partialSellSuggestion.estimatedProfit >= 0 ? '+' : '') + data.partialSellSuggestion.estimatedProfit.toLocaleString() + ' đ';
+                document.getElementById('modalPartialSellDesc').innerText = data.partialSellSuggestion.description;
+                
+                // Partial buy suggestion
+                document.getElementById('modalPartialBuyTiming').innerText = data.partialBuySuggestion.timing;
+                document.getElementById('modalPartialBuyLimit').innerText = data.partialBuySuggestion.remainingBudget.toLocaleString() + ' đ';
+                document.getElementById('modalPartialBuyQty').innerText = data.partialBuySuggestion.suggestedQuantity.toLocaleString();
+                document.getElementById('modalPartialBuyVal').innerText = data.partialBuySuggestion.suggestedValue.toLocaleString() + ' đ';
+                document.getElementById('modalPartialBuyDesc').innerText = data.partialBuySuggestion.description;
+                
+                // Average historical timing score
+                const timingRow = document.getElementById('modalHistoryTimingRow');
+                const avgTimingScoreEl = document.getElementById('modalAvgTimingScore');
+                if (data.avgTimingScore !== null) {
+                    avgTimingScoreEl.innerText = data.avgTimingScore.toFixed(1) + '%';
+                    timingRow.style.display = 'block';
+                } else {
+                    timingRow.style.display = 'none';
+                }
+
+                // Modal buttons logic
+                const btnBuy = document.getElementById('modalBtnBuy');
+                const btnPartialSell = document.getElementById('modalBtnPartialSell');
+                const btnSell = document.getElementById('modalBtnSell');
+
+                if (!data.isAiTrade) {
+                    btnBuy.style.display = data.partialBuySuggestion.suggestedQuantity > 0 ? 'inline-block' : 'none';
+                    btnBuy.onclick = function() {
+                        closeAdvancedAnalysis();
+                        buyMorePosition(id, data.symbol);
+                    };
+
+                    btnPartialSell.style.display = data.pnL > 0 && data.partialSellSuggestion.quantity > 0 ? 'inline-block' : 'none';
+                    btnPartialSell.onclick = function() {
+                        closeAdvancedAnalysis();
+                        partialSellPosition(id, data.currentPrice, data.symbol, data.partialSellSuggestion.quantity);
+                    };
+
+                    btnSell.style.display = 'inline-block';
+                    btnSell.onclick = function() {
+                        closeAdvancedAnalysis();
+                        sellPosition(id, data.currentPrice, data.symbol);
+                    };
+                } else {
+                    btnBuy.style.display = 'none';
+                    btnPartialSell.style.display = 'none';
+                    btnSell.style.display = 'none';
+                }
+            })
+            .catch(error => {
+                console.error(error);
+                document.getElementById('modalRationale').innerText = 'Không thể tải phân tích dữ liệu nâng cao. Lỗi: ' + error.message;
+            });
+    }
+
+    function closeAdvancedAnalysis() {
+        document.getElementById('advancedAnalysisModal').style.display = 'none';
     }
 </script>

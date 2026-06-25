@@ -93,6 +93,8 @@ CREATE TABLE UserPreferences (
     TargetProfitPercentage DECIMAL(18,4) NOT NULL,
     MaxLossPercentage DECIMAL(18,4) NOT NULL,
     AmountPerTrade DECIMAL(18,4) NOT NULL,
+    RiskPerTrade DECIMAL(18,4) NOT NULL DEFAULT 0,
+    TargetStartDate DATETIME2 NOT NULL DEFAULT GETDATE(),
     TargetAmount DECIMAL(18,4) NOT NULL,
     TakeProfitAmount DECIMAL(18,4) NOT NULL,
     StopLossAmount DECIMAL(18,4) NOT NULL,
@@ -259,3 +261,9 @@ BEGIN
     );
     PRINT 'Created table StockTransactions';
 END;
+
+/*
+-- [CẬP NHẬT: 2026-06-25]
+-- Bổ sung cột Ngày bắt đầu kế hoạch cho bảng cấu hình UserPreferences
+ALTER TABLE UserPreferences ADD PlanStartDate DATETIME2 NULL;
+*/
