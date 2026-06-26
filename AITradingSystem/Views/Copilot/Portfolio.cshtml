@@ -3,6 +3,7 @@
 @{
     ViewData["Title"] = "Danh mục đầu tư - DNSE AI";
     var positions = ViewBag.Positions as List<TradePosition> ?? new List<TradePosition>();
+    var openPositions = positions.Where(p => p.Status == "OPEN").ToList();
     var stocks = ViewBag.Stocks as List<StockViewModel> ?? new List<StockViewModel>();
     var pref = (ViewBag.Preference as UserPreference) ?? new UserPreference();
     var totalPnL = (decimal?)ViewBag.TotalPnL ?? 0;
@@ -24,7 +25,8 @@
     DateTime endDate = startDate.AddDays(totalDays);
     int remainingDays = (endDate.Date - DateTime.Now.Date).Days;
     if (remainingDays < 0) remainingDays = 0;
-    decimal remainingAmountTotal = Math.Max(0m, pref.TargetAmount - cumulativePnL);
+    decimal targetAmountToUse = totalTargetAmount > 0 ? totalTargetAmount : pref.TargetAmount;
+    decimal remainingAmountTotal = Math.Max(0m, targetAmountToUse - cumulativePnL);
 }
 
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -451,13 +453,13 @@
         <div class="summary-card target-card">
             <div class="card-label">Mục tiêu lợi nhuận tổng thể</div>
             <div class="card-value" style="color: var(--accent-amber);">
-                @pref.TargetAmount.ToString("N0") đ
+                @targetAmountToUse.ToString("N0") đ
             </div>
         </div>
         <div class="summary-card progress-card">
             <div class="card-label">Tiến độ mục tiêu tổng thể</div>
             @{
-                var overallProgress = pref.TargetAmount > 0 ? Math.Min(100, Math.Max(-100, cumulativePnL / pref.TargetAmount * 100)) : 0;
+                var overallProgress = targetAmountToUse > 0 ? Math.Min(100, Math.Max(-100, cumulativePnL / targetAmountToUse * 100)) : 0;
             }
             <div class="card-value" style="color: var(--accent-purple);">
                 @overallProgress.ToString("N1")%
@@ -593,63 +595,65 @@
                 <!-- Daily Action Calendar -->
                 <div class="col-12 mt-3">
                     <div class="p-3 rounded" style="background: rgba(139, 92, 246, 0.02); border: 1px solid rgba(139, 92, 246, 0.1);">
-                        <div class="fw-bold text-white mb-2" style="font-size: 0.85rem; color: var(--accent-cyan) !important;">📅 Lịch trình giao dịch tối ưu từng ngày (Daily Action Calendar):</div>
-                        <div class="table-responsive">
-                            <table class="table table-sm table-dark table-hover m-0" style="font-size: 0.8rem; border-color: rgba(255,255,255,0.03);">
-                                <thead>
-                                    <tr class="text-secondary" style="border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 0.75rem;">
-                                        <th style="width: 8%;">Ngày</th>
-                                        <th style="width: 10%;">Thứ</th>
-                                        <th style="width: 32%;">Hành động đề xuất (Step-by-step)</th>
-                                        <th style="width: 15%;">Mục tiêu giao dịch</th>
-                                        <th style="width: 10%;">PnL tích lũy</th>
-                                        <th style="width: 25%;">Hành động thực tế</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    @if (globalPlan.DailyCalendar != null && globalPlan.DailyCalendar.Any())
-                                    {
-                                        foreach (var item in globalPlan.DailyCalendar)
-                                        {
-                                            var badgeClass = item.ActionType switch
-                                            {
-                                                "MUA" => "bg-success",
-                                                "MUA THÊM" => "bg-success",
-                                                "BÁN" => "bg-danger",
-                                                "CƠ CẤU" => "bg-warning text-dark",
-                                                "TẤT TOÁN" => "bg-primary",
-                                                "SÀN ĐÓNG CỬA" => "bg-secondary",
-                                                _ => "bg-secondary"
-                                            };
-                                            <tr>
-                                                <td class="text-white fw-bold">@item.Date</td>
-                                                <td class="text-secondary">@item.DayOfWeek</td>
-                                                <td>
-                                                    @if (item.ActionType != "GIỮ" && item.ActionType != "SÀN ĐÓNG CỬA")
+                        <div class="fw-bold text-white mb-3" style="font-size: 0.85rem; color: var(--accent-cyan) !important;">📅 Lịch trình giao dịch tối ưu từng ngày (Daily Action Calendar):</div>
+                        @if (globalPlan.DailyCalendar != null && globalPlan.DailyCalendar.Any())
+                        {
+                            foreach (var dateGroup in globalPlan.DailyCalendar.GroupBy(x => x.Date))
+                            {
+                                <div class="mb-4">
+                                    <h6 class="text-white fw-bold mb-2 pb-1" style="border-bottom: 1px solid rgba(139, 92, 246, 0.2); display: inline-block;">
+                                        <i class="bi bi-calendar-event me-2" style="color: var(--accent-purple);"></i> Ngày @dateGroup.Key <span class="text-secondary fw-normal ms-1">(@dateGroup.First().DayOfWeek)</span>
+                                    </h6>
+                                    <div class="table-responsive">
+                                        <table class="table table-sm table-dark table-hover m-0" style="font-size: 0.8rem; border-color: rgba(255,255,255,0.03);">
+                                            <thead>
+                                                <tr class="text-secondary" style="border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 0.75rem;">
+                                                    <th style="width: 45%;">Hành động đề xuất (Step-by-step)</th>
+                                                    <th style="width: 15%;">Mục tiêu giao dịch</th>
+                                                    <th style="width: 15%;">PnL tích lũy</th>
+                                                    <th style="width: 25%;">Hành động thực tế</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach (var item in dateGroup)
+                                                {
+                                                    var badgeClass = item.ActionType switch
                                                     {
-                                                        <span class="badge @badgeClass me-2" style="font-size: 0.65rem; padding: 3px 6px;">@item.ActionType</span>
-                                                    }
-                                                    else if (item.ActionType == "GIỮ")
-                                                    {
-                                                        <span class="badge bg-secondary me-2" style="font-size: 0.65rem; padding: 3px 6px;">@item.ActionType</span>
-                                                    }
-                                                    @Html.Raw(System.Text.RegularExpressions.Regex.Replace(item.Description, @"\*\*(.*?)\*\*", "<strong>$1</strong>"))
-                                                </td>
-                                                <td class="@(item.Target.Contains("+") ? "pnl-positive fw-bold" : "text-secondary")">@item.Target</td>
-                                                <td class="text-info fw-bold">@item.CumulativePnL</td>
-                                                <td class="text-secondary" style="font-size: 0.8rem; line-height: 1.4;">@Html.Raw(item.ActualAction)</td>
-                                            </tr>
-                                        }
-                                    }
-                                    else
-                                    {
-                                        <tr>
-                                            <td colspan="6" class="text-center text-muted py-3">Chưa có lịch trình giao dịch nào được lập.</td>
-                                        </tr>
-                                    }
-                                </tbody>
-                            </table>
-                        </div>
+                                                        "MUA" => "bg-success",
+                                                        "MUA THÊM" => "bg-success",
+                                                        "BÁN" => "bg-danger",
+                                                        "CƠ CẤU" => "bg-warning text-dark",
+                                                        "TẤT TOÁN" => "bg-primary",
+                                                        "SÀN ĐÓNG CỬA" => "bg-secondary",
+                                                        _ => "bg-secondary"
+                                                    };
+                                                    <tr>
+                                                        <td>
+                                                            @if (item.ActionType != "GIỮ" && item.ActionType != "SÀN ĐÓNG CỬA")
+                                                            {
+                                                                <span class="badge @badgeClass me-2" style="font-size: 0.65rem; padding: 3px 6px;">@item.ActionType</span>
+                                                            }
+                                                            else if (item.ActionType == "GIỮ")
+                                                            {
+                                                                <span class="badge bg-secondary me-2" style="font-size: 0.65rem; padding: 3px 6px;">@item.ActionType</span>
+                                                            }
+                                                            @Html.Raw(System.Text.RegularExpressions.Regex.Replace(item.Description, @"\*\*(.*?)\*\*", "<strong>$1</strong>"))
+                                                        </td>
+                                                        <td class="@(item.Target.Contains("+") ? "pnl-positive fw-bold" : "text-secondary")">@item.Target</td>
+                                                        <td class="text-info fw-bold">@item.CumulativePnL</td>
+                                                        <td class="text-secondary" style="font-size: 0.8rem; line-height: 1.4;">@Html.Raw(item.ActualAction)</td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            }
+                        }
+                        else
+                        {
+                            <span class="text-secondary small">Chưa có lịch trình giao dịch.</span>
+                        }
                     </div>
                 </div>
             </div>
@@ -670,7 +674,7 @@
     }
 
     <!-- Position List -->
-    @if (!positions.Any())
+    @if (!openPositions.Any())
     {
         <div class="glass-card text-center py-5">
             <div style="font-size: 3rem; margin-bottom: 16px;">📊</div>
@@ -682,7 +686,7 @@
     }
     else
     {
-        foreach (var pos in positions)
+        foreach (var pos in openPositions)
         {
             var currentPrice = stocks.FirstOrDefault(s => s.Symbol == pos.Symbol)?.CurrentPrice ?? pos.EntryPrice;
             var pnl = (currentPrice - pos.EntryPrice) * pos.Quantity;
@@ -696,14 +700,10 @@
                     <div class="d-flex align-items-center gap-3">
                         <div>
                             <span class="fw-bold text-white" style="font-size: 1.15rem;">@pos.Symbol</span>
-                            @if (pos.IsAiTrade)
-                            {
-                                <span class="source-badge ai ms-2">🤖 AI Tự học</span>
-                            }
-                            else
-                            {
-                                <span class="source-badge real ms-2">💼 Lệnh thật</span>
-                            }
+                            <span class="source-badge real ms-2">💼 Lệnh thật</span>
+                            <span class="badge ms-2" style="font-size: 0.8rem; background: rgba(139, 92, 246, 0.15); border: 1px solid rgba(139, 92, 246, 0.3); color: #d8b4fe;">
+                                📦 Số CP còn lại: @pos.Quantity.ToString("N0") CP
+                            </span>
                         </div>
                     </div>
                     <div class="text-end">
@@ -720,8 +720,8 @@
                     <!-- Stats Grid -->
                     <div class="stat-grid mb-3">
                         <div class="stat-item">
-                            <div class="stat-label">Số lượng</div>
-                            <div class="stat-value text-white">@(pos.Quantity == 0 ? "0 (Đã chốt)" : pos.Quantity.ToString("N0"))</div>
+                            <div class="stat-label">Số CP còn lại</div>
+                            <div class="stat-value text-white">@(pos.Quantity == 0 ? "0 CP (Đã chốt)" : $"{pos.Quantity.ToString("N0")} CP")</div>
                         </div>
                         <div class="stat-item">
                             <div class="stat-label">Giá vốn</div>
@@ -917,33 +917,30 @@
                                     <span class="ai-signal @signalClass">@signalLabel</span>
                                 </div>
                                 <div class="ai-reason-text">@analysis.AiReason</div>
-                                @if (!pos.IsAiTrade)
+                                <div class="ai-reason-text" style="color: var(--accent-cyan);">
+                                    Hạn mức vốn cho mã: @analysis.FixedBudget.ToString("N0") đ | Đã dùng: @analysis.InvestedAmount.ToString("N0") đ | Còn lại: @analysis.RemainingBudget.ToString("N0") đ
+                                </div>
+                                <div class="ai-reason-text" style="color: var(--accent-amber);">
+                                    Có thể mua thêm tối đa: @analysis.SuggestedAddAmount.ToString("N0") đ (@analysis.SuggestedAddQuantity.ToString("N0") CP theo giá hiện tại)
+                                </div>
+                                <div class="ai-reason-text" style="color: var(--accent-green);">
+                                    Gợi ý mua thêm: chỉ giải ngân khi giá điều chỉnh về vùng an toàn và tổng vốn sau mua vẫn không vượt @analysis.FixedBudget.ToString("N0") đ.
+                                </div>
+                                @if (analysis.CurrentPnL > 0 && analysis.ProgressPercent >= 50)
                                 {
-                                    <div class="ai-reason-text" style="color: var(--accent-cyan);">
-                                        Hạn mức vốn cho mã: @analysis.FixedBudget.ToString("N0") đ | Đã dùng: @analysis.InvestedAmount.ToString("N0") đ | Còn lại: @analysis.RemainingBudget.ToString("N0") đ
-                                    </div>
                                     <div class="ai-reason-text" style="color: var(--accent-amber);">
-                                        Có thể mua thêm tối đa: @analysis.SuggestedAddAmount.ToString("N0") đ (@analysis.SuggestedAddQuantity.ToString("N0") CP theo giá hiện tại)
+                                        Gợi ý chốt bớt: có thể bán một phần để khóa lãi, giữ lại phần nhỏ làm vị thế tiếp tục quay vòng.
                                     </div>
-                                    <div class="ai-reason-text" style="color: var(--accent-green);">
-                                        Gợi ý mua thêm: chỉ giải ngân khi giá điều chỉnh về vùng an toàn và tổng vốn sau mua vẫn không vượt @analysis.FixedBudget.ToString("N0") đ.
-                                    </div>
-                                    @if (analysis.CurrentPnL > 0 && analysis.ProgressPercent >= 50)
-                                    {
-                                        <div class="ai-reason-text" style="color: var(--accent-amber);">
-                                            Gợi ý chốt bớt: có thể bán một phần để khóa lãi, giữ lại phần nhỏ làm vị thế tiếp tục quay vòng.
-                                        </div>
-                                    }
-                                    @if (analysis.CanPartialSell)
-                                    {
-                                        <div class="ai-reason-text" style="color: var(--accent-green);">
-                                            Đề xuất bán bớt: @analysis.SuggestedSellQuantity.ToString("N0") CP, khóa khoảng @analysis.SuggestedSellProfit.ToString("N0") đ, còn lại @((pos.Quantity - analysis.SuggestedSellQuantity).ToString("N0")) CP.
-                                        </div>
-                                    }
                                 }
-                            </div>
-                        </div>
-                    }
+                                @if (analysis.CanPartialSell)
+                                {
+                                    <div class="ai-reason-text" style="color: var(--accent-green);">
+                                        Đề xuất bán bớt: @analysis.SuggestedSellQuantity.ToString("N0") CP, khóa khoảng @analysis.SuggestedSellProfit.ToString("N0") đ, còn lại @((pos.Quantity - analysis.SuggestedSellQuantity).ToString("N0")) CP.
+                                                        </div>
+                                                    }
+                                                </div>
+                                            </div>
+                                        }
 
                     <!-- Target Settings Form -->
                     <form asp-action="UpdateRisk" method="post">
@@ -1027,80 +1024,65 @@
                     @if (symbolTransactions.Any())
                     {
                         <div class="transaction-section mb-3 mt-3">
-                            <div class="d-flex align-items-center gap-2 mb-2">
-                                <span style="font-size: 1rem;">📜</span>
-                                <span style="font-size: 0.75rem; color: var(--accent-cyan); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">Lịch sử giao dịch chi tiết</span>
-                            </div>
-                            <div class="timeline-container" style="border-left: 2px solid var(--border-color); padding-left: 16px; margin-left: 6px;">
-                                @foreach (var tx in symbolTransactions)
-                                {
-                                    var isBuy = tx.TransactionType == "BUY";
-                                    var dotColor = isBuy ? "var(--accent-green)" : "var(--accent-amber)";
-                                    var actionText = isBuy ? "MUA" : "BÁN";
-                                    var actionClass = isBuy ? "pnl-positive" : "text-warning";
-                                    
-                                    var timingClass = "";
-                                    var timingLabel = "";
-                                    if (tx.TimingScore.HasValue)
-                                    {
-                                        timingClass = tx.TimingScore.Value >= 80m ? "pnl-positive" : tx.TimingScore.Value >= 50m ? "text-warning" : "pnl-negative";
-                                        timingLabel = tx.TimingScore.Value >= 80m ? "Tốt" : tx.TimingScore.Value >= 50m ? "Trung bình" : "Kém";
+                            <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+                                <div class="d-flex align-items-center gap-2">
+                                    <span style="font-size: 1.1rem;">📜</span>
+                                    <span style="font-size: 0.82rem; color: var(--accent-cyan); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;">Lịch sử giao dịch cụ thể & Timing</span>
+                                </div>
+                                <div class="d-flex align-items-center gap-3 text-secondary" style="font-size: 0.78rem;">
+                                    @{
+                                        var buysCount = symbolTransactions.Where(t => t.TransactionType == "BUY").Sum(t => t.Quantity);
+                                        var sellsCount = symbolTransactions.Where(t => t.TransactionType == "SELL").Sum(t => t.Quantity);
                                     }
-
-                                    <div class="timeline-item mb-3" style="position: relative;">
-                                        <div class="timeline-dot" style="position: absolute; left: -21px; top: 4px; width: 10px; height: 10px; border-radius: 50%; background: @dotColor; border: 2px solid var(--bg-dark);"></div>
-                                        <div class="d-flex justify-content-between align-items-center">
-                                            <div style="font-size: 0.85rem;">
-                                                <span class="fw-bold @actionClass">
-                                                    @actionText
-                                                </span>
-                                                @tx.Quantity.ToString("N0") CP × @tx.Price.ToString("N0") đ
-                                            </div>
-                                            <div style="font-size: 0.72rem; color: var(--text-secondary);">
-                                                @tx.TransactionDate.ToString("dd/MM/yyyy HH:mm")
-                                            </div>
-                                        </div>
-                                        @if (tx.TransactionType == "SELL")
+                                    <span>Tổng mua: <strong class="text-white">@buysCount.ToString("N0") CP</strong></span>
+                                    <span>Tổng bán: <strong class="text-white">@sellsCount.ToString("N0") CP</strong></span>
+                                    <span>Hiện còn: <strong class="text-info">@((buysCount - sellsCount).ToString("N0")) CP</strong></span>
+                                </div>
+                            </div>
+                            <div class="table-responsive">
+                                <table class="table table-sm table-dark table-hover m-0 align-middle" style="font-size: 0.82rem; border-color: rgba(255,255,255,0.05);">
+                                    <thead>
+                                        <tr class="text-secondary" style="font-size: 0.75rem; border-bottom: 1px solid rgba(255,255,255,0.08);">
+                                            <th>Ngày giao dịch</th>
+                                            <th>Loại lệnh</th>
+                                            <th class="text-end">Số lượng</th>
+                                            <th class="text-end">Giá khớp</th>
+                                            <th class="text-end">Tổng giá trị</th>
+                                            <th class="text-end">Lãi/Lỗ hiện thực</th>
+                                            <th class="text-center">Đánh giá Timing</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var tx in symbolTransactions)
                                         {
-                                            <div class="d-flex justify-content-between align-items-center mt-1" style="font-size: 0.78rem;">
-                                                @if (tx.PnlAmount.HasValue)
-                                                {
-                                                    <span class="@(tx.PnlAmount.Value >= 0 ? "pnl-positive" : "pnl-negative")">
-                                                        Lãi/Lỗ: @(tx.PnlAmount.Value >= 0 ? "+" : "")@tx.PnlAmount.Value.ToString("N0") đ
-                                                    </span>
-                                                }
-                                                @if (tx.TimingScore.HasValue)
-                                                {
-                                                    <span style="font-size: 0.72rem; color: var(--text-secondary);">
-                                                        Timing Score: <span class="fw-bold @timingClass">@tx.TimingScore.Value% (@timingLabel)</span>
-                                                    </span>
-                                                }
-                                            </div>
-                                            @if (tx.PriceHighSinceBuy.HasValue && tx.PriceLowSinceBuy.HasValue && tx.PriceHighSinceBuy.Value > tx.PriceLowSinceBuy.Value)
+                                            var isBuy = tx.TransactionType == "BUY";
+                                            var badgeClass = isBuy ? "bg-success" : "bg-warning text-dark";
+                                            var actionText = isBuy ? "MUA" : "BÁN";
+                                            var timingClass = "";
+                                            var timingLabel = "";
+                                            if (tx.TimingScore.HasValue)
                                             {
-                                                <div class="price-range-bar mt-2" style="font-size: 0.72rem; color: var(--text-secondary);">
-                                                    <div class="d-flex justify-content-between mb-1" style="font-size: 0.68rem;">
-                                                        <span>Thấp nhất: @tx.PriceLowSinceBuy.Value.ToString("N0") đ</span>
-                                                        <span>Cao nhất: @tx.PriceHighSinceBuy.Value.ToString("N0") đ</span>
-                                                    </div>
-                                                    <div style="width: 100%; height: 4px; background: rgba(255,255,255,0.08); border-radius: 2px; position: relative;">
-                                                        @{
-                                                            var low = tx.PriceLowSinceBuy.Value;
-                                                            var high = tx.PriceHighSinceBuy.Value;
-                                                            var current = tx.Price;
-                                                            var percent = (current - low) / (high - low) * 100m;
-                                                            percent = Math.Clamp(percent, 0m, 100m);
-                                                        }
-                                                        <div style="position: absolute; left: @percent%; top: -2px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent-cyan); transform: translateX(-50%);"></div>
-                                                    </div>
-                                                    <div class="text-center mt-1" style="font-size: 0.65rem; color: var(--text-secondary);">
-                                                        Giá bán @tx.Price.ToString("N0") đ nằm trong dải giá giữ vị thế
-                                                    </div>
-                                                </div>
+                                                timingClass = tx.TimingScore.Value >= 80m ? "text-success" : tx.TimingScore.Value >= 50m ? "text-warning" : "text-danger";
+                                                timingLabel = $"{tx.TimingScore.Value:N1}% (" + (tx.TimingScore.Value >= 80m ? "Tốt" : tx.TimingScore.Value >= 50m ? "TB" : "Kém") + ")";
                                             }
+                                            else
+                                            {
+                                                timingLabel = "-";
+                                            }
+                                            <tr>
+                                                <td class="text-secondary">@tx.TransactionDate.ToString("dd/MM/yyyy HH:mm")</td>
+                                                <td><span class="badge @badgeClass" style="font-size: 0.7rem; padding: 3px 6px;">@actionText</span></td>
+                                                <td class="text-end font-monospace">@tx.Quantity.ToString("N0") CP</td>
+                                                <td class="text-end font-monospace">@tx.Price.ToString("N0") đ</td>
+                                                <td class="text-end font-monospace">@tx.TotalAmount.ToString("N0") đ</td>
+                                                <td class="text-end font-monospace @(tx.PnlAmount >= 0 ? "pnl-positive" : "pnl-negative")">
+                                                    @(tx.PnlAmount.HasValue ? (tx.PnlAmount.Value >= 0 ? "+" : "") + tx.PnlAmount.Value.ToString("N0") + " đ" : "-")
+                                                </td>
+                                                <td class="text-center fw-bold @timingClass">@timingLabel</td>
+                                            </tr>
                                         }
-                                    </div>
-                                }
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
                     }
@@ -1111,7 +1093,7 @@
 
     <!-- Danh Mục Vị Thế Đã Đóng / Lịch Sử Đầu Tư -->
     <div class="glass-card mt-4 mb-4">
-        <h4 class="fw-bold text-white mb-3" style="font-size: 1.1rem;"><span class="gradient-text">Danh mục vị thế đã đóng / Lịch sử đầu tư</span></h4>
+        <h4 class="fw-bold text-white mb-3" style="font-size: 1.1rem;"><span class="gradient-text">Danh mục vị thế đã đóng / Lịch sử đầu tư (Chi tiết giao dịch)</span></h4>
         @{
             var closedPositions = ViewBag.ClosedPositions as List<TradePosition> ?? new List<TradePosition>();
         }
@@ -1121,27 +1103,115 @@
         }
         else
         {
-            <div class="row g-3">
+            <div class="d-flex flex-column gap-4">
                 @foreach (var cp in closedPositions)
                 {
-                    <div class="col-md-4">
-                        <div class="p-3 rounded" style="background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.05);">
-                            <div class="d-flex justify-content-between align-items-center mb-2">
-                                <span class="fw-bold fs-5 text-white">@cp.Symbol</span>
-                                <span class="badge bg-secondary">ĐÃ ĐÓNG (0 CP)</span>
+                    var symbolTransactions = (ViewBag.Transactions as List<StockTransaction> ?? new List<StockTransaction>())
+                        .Where(t => t.Symbol == cp.Symbol)
+                        .OrderBy(t => t.TransactionDate)
+                        .ToList();
+
+                    <div class="position-card">
+                        <div class="position-header" style="background: rgba(255,255,255,0.01); padding: 16px 20px;">
+                            <div class="d-flex align-items-center gap-3">
+                                <div>
+                                    <span class="fw-bold text-white" style="font-size: 1.15rem;">@cp.Symbol</span>
+                                    <span class="source-badge bg-secondary text-white-50 ms-2" style="font-size: 0.73rem; border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; padding: 4px 8px; display: inline-block;">
+                                        ⚪ Đã tất toán (Số CP còn lại: 0 CP)
+                                    </span>
+                                </div>
                             </div>
-                            <div class="d-flex justify-content-between mb-1">
-                                <span class="text-secondary" style="font-size: 0.85rem;">Lãi/Lỗ thực tế:</span>
-                                <span class="fw-bold @(cp.PnL >= 0 ? "pnl-positive" : "pnl-negative")">@(cp.PnL >= 0 ? "+" : "")@cp.PnL.ToString("N0") đ</span>
+                            <div class="text-end">
+                                <div class="@(cp.PnL >= 0 ? "pnl-positive" : "pnl-negative")" style="font-size: 1.25rem; font-weight: 700;">
+                                    @(cp.PnL >= 0 ? "+" : "")@cp.PnL.ToString("N0") đ
+                                </div>
+                                <div class="small text-secondary" style="font-size: 0.82rem;">
+                                    Lãi/Lỗ thực tế chốt
+                                </div>
                             </div>
-                            <div class="d-flex justify-content-between mb-1">
-                                <span class="text-secondary" style="font-size: 0.85rem;">Giá mua TB:</span>
-                                <span class="text-white">@cp.EntryPrice.ToString("N0") đ</span>
+                        </div>
+                        <div class="position-body" style="padding: 16px 20px;">
+                            <div class="stat-grid mb-3">
+                                <div class="stat-item">
+                                    <div class="stat-label" style="font-size: 0.72rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em;">Số CP còn lại</div>
+                                    <div class="stat-value text-white-50" style="font-size: 0.95rem; font-weight: 600; margin-top: 2px;">0 CP</div>
+                                </div>
+                                <div class="stat-item">
+                                    <div class="stat-label" style="font-size: 0.72rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em;">Giá mua trung bình</div>
+                                    <div class="stat-value text-white-50" style="font-size: 0.95rem; font-weight: 600; margin-top: 2px;">@cp.EntryPrice.ToString("N0") đ</div>
+                                </div>
+                                <div class="stat-item">
+                                    <div class="stat-label" style="font-size: 0.72rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em;">Thời gian nắm giữ</div>
+                                    <div class="stat-value text-white-50" style="font-size: 0.95rem; font-weight: 600; margin-top: 2px;">@((DateTime.Now.Date - cp.EntryDate.Date).Days) ngày</div>
+                                </div>
                             </div>
-                            <div class="d-flex justify-content-between">
-                                <span class="text-secondary" style="font-size: 0.85rem;">Đã giữ:</span>
-                                <span class="text-white">@((DateTime.Now - cp.EntryDate).Days) ngày</span>
-                            </div>
+
+                            <!-- Lịch sử giao dịch cụ thể của mã (Vị thế đã đóng) -->
+                            @if (symbolTransactions.Any())
+                            {
+                                <div class="transaction-section mb-2 mt-2" style="background: rgba(255, 255, 255, 0.015); border: 1px solid var(--border-color); border-radius: 12px; padding: 16px;">
+                                    <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+                                        <div class="d-flex align-items-center gap-2">
+                                            <span style="font-size: 1.1rem;">📜</span>
+                                            <span style="font-size: 0.82rem; color: var(--accent-cyan); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;">Lịch sử giao dịch cụ thể & Timing</span>
+                                        </div>
+                                        <div class="d-flex align-items-center gap-3 text-secondary" style="font-size: 0.78rem;">
+                                            @{
+                                                var buysCount = symbolTransactions.Where(t => t.TransactionType == "BUY").Sum(t => t.Quantity);
+                                                var sellsCount = symbolTransactions.Where(t => t.TransactionType == "SELL").Sum(t => t.Quantity);
+                                            }
+                                            <span>Tổng mua: <strong class="text-white">@buysCount.ToString("N0") CP</strong></span>
+                                            <span>Tổng bán: <strong class="text-white">@sellsCount.ToString("N0") CP</strong></span>
+                                            <span>Hiện còn: <strong class="text-info">@((buysCount - sellsCount).ToString("N0")) CP</strong></span>
+                                        </div>
+                                    </div>
+                                    <div class="table-responsive">
+                                        <table class="table table-sm table-dark table-hover m-0 align-middle" style="font-size: 0.82rem; border-color: rgba(255,255,255,0.05);">
+                                            <thead>
+                                                <tr class="text-secondary" style="font-size: 0.75rem; border-bottom: 1px solid rgba(255,255,255,0.08);">
+                                                    <th>Ngày giao dịch</th>
+                                                    <th>Loại lệnh</th>
+                                                    <th class="text-end">Số lượng</th>
+                                                    <th class="text-end">Giá khớp</th>
+                                                    <th class="text-end">Tổng giá trị</th>
+                                                    <th class="text-end">Lãi/Lỗ hiện thực</th>
+                                                    <th class="text-center">Đánh giá Timing</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach (var tx in symbolTransactions)
+                                                {
+                                                    var isBuy = tx.TransactionType == "BUY";
+                                                    var badgeClass = isBuy ? "bg-success" : "bg-warning text-dark";
+                                                    var actionText = isBuy ? "MUA" : "BÁN";
+                                                    var timingClass = "";
+                                                    var timingLabel = "";
+                                                    if (tx.TimingScore.HasValue)
+                                                    {
+                                                        timingClass = tx.TimingScore.Value >= 80m ? "text-success" : tx.TimingScore.Value >= 50m ? "text-warning" : "text-danger";
+                                                        timingLabel = $"{tx.TimingScore.Value:N1}% (" + (tx.TimingScore.Value >= 80m ? "Tốt" : tx.TimingScore.Value >= 50m ? "TB" : "Kém") + ")";
+                                                    }
+                                                    else
+                                                    {
+                                                        timingLabel = "-";
+                                                    }
+                                                    <tr>
+                                                        <td class="text-secondary">@tx.TransactionDate.ToString("dd/MM/yyyy HH:mm")</td>
+                                                        <td><span class="badge @badgeClass" style="font-size: 0.7rem; padding: 3px 6px;">@actionText</span></td>
+                                                        <td class="text-end font-monospace">@tx.Quantity.ToString("N0") CP</td>
+                                                        <td class="text-end font-monospace">@tx.Price.ToString("N0") đ</td>
+                                                        <td class="text-end font-monospace">@tx.TotalAmount.ToString("N0") đ</td>
+                                                        <td class="text-end font-monospace @(tx.PnlAmount >= 0 ? "pnl-positive" : "pnl-negative")">
+                                                            @(tx.PnlAmount.HasValue ? (tx.PnlAmount.Value >= 0 ? "+" : "") + tx.PnlAmount.Value.ToString("N0") + " đ" : "-")
+                                                        </td>
+                                                        <td class="text-center fw-bold @timingClass">@timingLabel</td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            }
                         </div>
                     </div>
                 }

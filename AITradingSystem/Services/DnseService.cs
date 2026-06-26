@@ -188,7 +188,7 @@ namespace AITradingSystem.Services
 
                     // Lấy tất cả vị thế OPEN không phải AI để so sánh (UPSERT)
                     var existingOpenPositions = await _context.TradePositions
-                        .Where(p => p.Status == "OPEN" && !p.IsAiTrade)
+                        .Where(p => p.Status == "OPEN")
                         .ToListAsync();
 
                     // Tập hợp các mã đã xử lý từ DNSE (để biết mã nào cần đánh dấu đóng)
@@ -343,7 +343,6 @@ namespace AITradingSystem.Services
                                 PnL = pnl,
                                 TakeProfitPrice = takeProfitPrice,
                                 StopLossPrice = stopLossPrice,
-                                IsAiTrade = false,
                                 InvestedAmount = investedAmount
                             });
                             Console.WriteLine($"[DNSE Sync] Thêm mới vị thế: {symbol} (SL: {quantity}, Giá vào: {entryPrice:N0}, Vốn: {investedAmount:N0})");
@@ -482,7 +481,7 @@ namespace AITradingSystem.Services
             var targetProfitPercentage = pref?.TargetProfitPercentage ?? 15m;
             var maxLossPercentage = pref?.MaxLossPercentage ?? 7m;
 
-            var existingOpenPositions = await _context.TradePositions.Where(p => p.Status == "OPEN" && !p.IsAiTrade).ToListAsync();
+            var existingOpenPositions = await _context.TradePositions.Where(p => p.Status == "OPEN").ToListAsync();
             _context.TradePositions.RemoveRange(existingOpenPositions);
 
             _context.TradePositions.AddRange(
@@ -496,7 +495,6 @@ namespace AITradingSystem.Services
                     PnL = 22265,
                     TakeProfitPrice = CalculateTargetPrice(13554.7m, targetProfitPercentage),
                     StopLossPrice = CalculateStopLossPrice(13554.7m, maxLossPercentage),
-                    IsAiTrade = false,
                     InvestedAmount = 13554.7m * 50,
                     BudgetAmount = pref?.AmountPerTrade
                 },
@@ -510,7 +508,6 @@ namespace AITradingSystem.Services
                     PnL = -11444,
                     TakeProfitPrice = CalculateTargetPrice(20228.88m, targetProfitPercentage),
                     StopLossPrice = CalculateStopLossPrice(20228.88m, maxLossPercentage),
-                    IsAiTrade = false,
                     InvestedAmount = 20228.88m * 50,
                     BudgetAmount = pref?.AmountPerTrade
                 }

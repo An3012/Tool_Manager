@@ -7,6 +7,7 @@ using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
 using AITradingSystem.Models;
 using AITradingSystem.Data;
+using AITradingSystem.Controllers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 
@@ -298,6 +299,343 @@ Vui lòng trả về kết quả dưới định dạng JSON như sau:
                 TargetPrice = 0,
                 StopLossPrice = 0
             };
+        }
+
+        // Lập kế hoạch tối ưu danh mục tổng thể dựa trên các tham số:
+        // - Mục tiêu lợi nhuận tổng thể (pref.TargetAmount)
+        // - Vốn đầu tư (pref.AmountPerTrade hoặc tổng)
+        // - Số ngày kế hoạch (tính từ pref.InvestmentHorizon)
+        // - Ngày bắt đầu kế hoạch (pref.PlanStartDate)
+        // - Các mã cp đang nắm giữ (positions)
+        public async Task<GlobalPortfolioPlanResult> GenerateGlobalPortfolioPlanAsync(List<TradePosition> positions, UserPreference pref, List<StockViewModel> stocks, decimal cumulativePnL, decimal totalTargetAmount)
+        {
+            DateTime startDate = pref.PlanStartDate ?? DateTime.Today;
+            
+            // Lấy số ngày kế hoạch từ InvestmentHorizon
+            int totalDays = 30;
+            if (!string.IsNullOrEmpty(pref.InvestmentHorizon))
+            {
+                var match = System.Text.RegularExpressions.Regex.Match(pref.InvestmentHorizon, @"\d+");
+                if (match.Success) int.TryParse(match.Value, out totalDays);
+            }
+            
+            DateTime endDate = startDate.AddDays(totalDays);
+            int remainingDays = (endDate.Date - DateTime.Today.Date).Days;
+            if (remainingDays < 0) remainingDays = 0;
+            
+            decimal targetAmountToUse = totalTargetAmount > 0 ? totalTargetAmount : pref.TargetAmount;
+            decimal remainingAmountTotal = Math.Max(0m, targetAmountToUse - cumulativePnL);
+
+            // Bối cảnh vị thế đang mở
+            var positionsContext = positions.Any()
+                ? string.Join("\n", positions.Select(p => $"- {p.Symbol}: SL {p.Quantity}, Giá vào {p.EntryPrice:N0} đ, Lãi/Lỗ hiện tại {p.PnL:N0} đ, Chốt lời {p.TakeProfitPrice?.ToString("N0") ?? "N/A"} đ, Cắt lỗ {p.StopLossPrice?.ToString("N0") ?? "N/A"} đ"))
+                : "Không có vị thế mở nào.";
+
+            // Bối cảnh giá hiện tại
+            var stocksContext = string.Join("\n", stocks.Select(s => $"- {s.Symbol}: Giá hiện tại {s.CurrentPrice:N0} đ, Thay đổi {s.ChangePercentage:N2}%, RSI {s.Rsi:N1}"));
+
+            var prompt = $@"
+Bạn là AI Trading Copilot chuyên nghiệp tối ưu hóa danh mục đầu tư.
+Nhiệm vụ của bạn là lập một KẾ HOẠCH TỐI ƯU HÓA DANH MỤC tổng thể cho người dùng từ ngày bắt đầu đến ngày kết thúc kế hoạch.
+
+[THÔNG TIN KẾ HOẠCH CỦA NGƯỜI DÙNG]
+- Ngày bắt đầu kế hoạch: {startDate:dd/MM/yyyy}
+- Số ngày kế hoạch: {totalDays} ngày (Ngày kết thúc: {endDate:dd/MM/yyyy}, Số ngày còn lại từ hôm nay: {remainingDays} ngày)
+- Vốn đầu tư mỗi lệnh: {pref.AmountPerTrade:N0} đ
+- Mục tiêu lợi nhuận tổng thể: {targetAmountToUse:N0} đ
+- Lợi nhuận lũy kế hiện tại (đã bán + đang mở): {cumulativePnL:N0} đ
+
+[DANH MỤC CÁC VỊ THẾ ĐANG MỞ]
+{positionsContext}
+
+[GIÁ THỊ TRƯỜNG HIỆN TẠI VÀ CHỈ BÁO KỸ THUẬT]
+{stocksContext}
+
+YÊU CẦU LẬP KẾ HOẠCH:
+1. Đánh giá xác suất thành công (%) để đạt được mục tiêu lợi nhuận tổng thể còn thiếu ({remainingAmountTotal:N0} đ) trong {remainingDays} ngày còn lại.
+2. Đề xuất các hành động cụ thể cho từng mã cổ phiếu (MUA, BÁN, NẮM GIỮ, CHUYỂN VỐN) để tối ưu hóa tỷ trọng rủi ro/lợi nhuận.
+3. Lập một LỊCH TRÌNH HOẠT ĐỘNG TỪNG NGÀY (Daily Action Calendar) từ hôm nay ({DateTime.Today:dd/MM/yyyy}) đến ngày kết thúc ({endDate:dd/MM/yyyy}) chỉ ra rõ ngày nào nên làm gì đối với các mã trong danh mục.
+
+Vui lòng trả về kết quả dưới định dạng JSON khớp chính xác với lớp GlobalPortfolioPlanResult như sau:
+{{
+  ""SuccessProbability"": 75,
+  ""PlanSummary"": ""Tóm tắt kế hoạch hành động tổng thể..."",
+  ""Actions"": [
+    {{ ""Ticker"": ""VCG"", ""Action"": ""BÁN (CHỐT LỜI)"", ""Description"": ""Giá đạt mốc kỳ vọng..."" }}
+  ],
+  ""ExpectedContributions"": [
+    {{ ""Ticker"": ""VCG"", ""ExpectedProfit"": 500000, ""Description"": ""Mục tiêu chốt tại..."" }}
+  ],
+  ""Rationale"": ""Giải thích cơ sở phân tích danh mục..."",
+  ""DailyCalendar"": [
+    {{
+      ""Date"": ""26/06/2026"",
+      ""DayOfWeek"": ""Friday"",
+      ""ActionType"": ""BÁN"",
+      ""Description"": ""Hành động chi tiết cho ngày này..."",
+      ""Target"": ""22,000 đ"",
+      ""CumulativePnL"": ""100,000 đ"",
+      ""ActualAction"": ""-""
+    }}
+  ]
+}}";
+
+            string aiResponse = string.Empty;
+            if (string.IsNullOrEmpty(_configuration["AiConfig:ApiKey"]) || _configuration["AiConfig:ApiKey"] == "MOCK_KEY")
+            {
+                // Fallback giả lập lập kế hoạch thông minh
+                aiResponse = SimulatePlanReasoning(positions, pref, stocks, cumulativePnL, totalDays, startDate, endDate, remainingDays, remainingAmountTotal, totalTargetAmount);
+            }
+            else
+            {
+                try
+                {
+                    var chatService = _kernel.GetRequiredService<IChatCompletionService>();
+                    var history = new ChatHistory();
+                    history.AddUserMessage(prompt);
+                    var response = await chatService.GetChatMessageContentAsync(history);
+                    aiResponse = response.Content ?? string.Empty;
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[AI Planner] Lỗi gọi LLM: {ex.Message}");
+                    aiResponse = SimulatePlanReasoning(positions, pref, stocks, cumulativePnL, totalDays, startDate, endDate, remainingDays, remainingAmountTotal, totalTargetAmount);
+                }
+            }
+
+            try
+            {
+                var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                var result = JsonSerializer.Deserialize<GlobalPortfolioPlanResult>(aiResponse, options);
+                if (result != null)
+                {
+                    return result;
+                }
+            }
+            catch (Exception parseEx)
+            {
+                Console.WriteLine($"[AI Planner] Lỗi parse JSON kết quả kế hoạch: {parseEx.Message}");
+            }
+
+            // Fallback cuối cùng nếu có lỗi parse
+            var fallbackJson = SimulatePlanReasoning(positions, pref, stocks, cumulativePnL, totalDays, startDate, endDate, remainingDays, remainingAmountTotal, totalTargetAmount);
+            return JsonSerializer.Deserialize<GlobalPortfolioPlanResult>(fallbackJson, new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+        }
+
+        private string SimulatePlanReasoning(List<TradePosition> positions, UserPreference pref, List<StockViewModel> stocks, decimal cumulativePnL, int totalDays, DateTime startDate, DateTime endDate, int remainingDays, decimal remainingAmountTotal, decimal totalTargetAmount)
+        {
+            decimal targetAmountToUse = totalTargetAmount > 0 ? totalTargetAmount : pref.TargetAmount;
+            // Tính xác suất thành công
+            decimal successProbability = 50;
+            decimal targetProgress = 0;
+            if (targetAmountToUse <= 0)
+            {
+                successProbability = 100;
+            }
+            else
+            {
+                targetProgress = cumulativePnL / targetAmountToUse * 100;
+                if (cumulativePnL >= targetAmountToUse)
+                {
+                    successProbability = Math.Min(99m, 95m + (remainingDays > 0 ? 3m : 4m));
+                }
+                else
+                {
+                    double daysRatio = (double)remainingDays / (totalDays > 0 ? totalDays : 30);
+                    decimal progressWeight = Math.Clamp(targetProgress, 0, 100);
+                    successProbability = Math.Clamp(progressWeight + (decimal)(daysRatio * 40.0), 10, 95);
+                    
+                    int winningPositions = positions.Count(p => p.PnL > 0);
+                    int totalPositions = positions.Count;
+                    if (totalPositions > 0)
+                    {
+                        decimal winRate = (decimal)winningPositions / totalPositions;
+                        successProbability += (winRate - 0.5m) * 15m;
+                    }
+                    successProbability = Math.Round(Math.Clamp(successProbability, 5, 98), 1);
+                }
+            }
+
+            var actions = new List<PlanAction>();
+            var expectedContributions = new List<ExpectedContribution>();
+            var dailyCalendar = new List<AITradingSystem.Models.DailyCalendarItem>();
+
+            foreach (var pos in positions)
+            {
+                var currentPrice = stocks.FirstOrDefault(s => s.Symbol == pos.Symbol)?.CurrentPrice ?? pos.EntryPrice;
+                decimal targetPrice = pos.TakeProfitPrice ?? (pos.EntryPrice * (1 + (pref.TargetProfitPercentage > 0 ? pref.TargetProfitPercentage / 100m : 0.15m)));
+                decimal stopLossPrice = pos.StopLossPrice ?? (pos.EntryPrice * (1 - (pref.MaxLossPercentage > 0 ? pref.MaxLossPercentage / 100m : 0.07m)));
+                decimal expectedProfit = pos.Quantity * Math.Max(0, targetPrice - pos.EntryPrice);
+                
+                string actionStr = "NẮM GIỮ";
+                string descStr = "";
+                
+                if (currentPrice >= targetPrice)
+                {
+                    actionStr = "BÁN (CHỐT LỜI)";
+                    descStr = $"Giá hiện tại {currentPrice:N0} đ đã đạt mục tiêu chốt lời {targetPrice:N0} đ. Khuyến nghị BÁN chốt lời để hiện thực hóa lợi nhuận.";
+                }
+                else if (currentPrice <= stopLossPrice)
+                {
+                    actionStr = "BÁN (CẮT LỖ)";
+                    descStr = $"Giá hiện tại {currentPrice:N0} đ vi phạm mốc cắt lỗ {stopLossPrice:N0} đ. Khuyến nghị BÁN cắt lỗ ngay quản trị rủi ro.";
+                }
+                else if (pos.PnL > 0)
+                {
+                    actionStr = "NẮM GIỮ (GỒNG LÃI)";
+                    descStr = $"Đang lãi tạm tính {pos.PnL:N0} đ. Giá giữ vững trên hỗ trợ. Tiếp tục gồng lãi hướng tới {targetPrice:N0} đ.";
+                }
+                else
+                {
+                    actionStr = "NẮM GIỮ (CHỜ HỒI)";
+                    descStr = $"Đang lỗ nhẹ {Math.Abs(pos.PnL):N0} đ. Vẫn trên hỗ trợ cứng {stopLossPrice:N0} đ. Tiếp tục nắm giữ theo dõi phản ứng giá.";
+                }
+
+                actions.Add(new PlanAction { Ticker = pos.Symbol, Action = actionStr, Description = descStr });
+                expectedContributions.Add(new ExpectedContribution { Ticker = pos.Symbol, ExpectedProfit = expectedProfit, Description = $"Mục tiêu chốt tại {targetPrice:N0} đ (Khối lượng: {pos.Quantity} CP)" });
+            }
+
+            if (!positions.Any())
+            {
+                actions.Add(new PlanAction { Ticker = "DANH MỤC", Action = "MUA", Description = "Không có vị thế mở nào. Đề xuất giải ngân 20-30% vốn vào các mã tiềm năng khi thị trường điều chỉnh." });
+            }
+
+            // Tạo lịch giao dịch tối ưu
+            var calendarDays = new List<DateTime>();
+            calendarDays.Add(DateTime.Today);
+            for (int i = 1; i <= 6; i++)
+            {
+                calendarDays.Add(DateTime.Today.AddDays(i));
+            }
+            if (totalDays > 10)
+            {
+                var midDate = DateTime.Today.AddDays(totalDays / 2);
+                if (!calendarDays.Any(d => d.Date == midDate.Date)) calendarDays.Add(midDate.Date);
+            }
+            var lastDate = DateTime.Today.AddDays(totalDays);
+            if (!calendarDays.Any(d => d.Date == lastDate.Date)) calendarDays.Add(lastDate.Date);
+            
+            calendarDays = calendarDays.OrderBy(d => d).ToList();
+            
+            foreach (var date in calendarDays)
+            {
+                int dayOffset = (date.Date - DateTime.Today.Date).Days;
+                string actionType = "GIỮ";
+                string description = "";
+                string target = "-";
+                
+                if (date.DayOfWeek == DayOfWeek.Saturday || date.DayOfWeek == DayOfWeek.Sunday)
+                {
+                    actionType = "SÀN ĐÓNG CỬA";
+                    description = "Thị trường nghỉ giao dịch cuối tuần. Hãy nghiên cứu tin tức vĩ mô và kết quả kinh doanh quý mới.";
+                }
+                else if (dayOffset == 0)
+                {
+                    var urgentSells = positions.Where(p => {
+                        var price = stocks.FirstOrDefault(s => s.Symbol == p.Symbol)?.CurrentPrice ?? p.EntryPrice;
+                        var tp = p.TakeProfitPrice ?? (p.EntryPrice * 1.15m);
+                        var sl = p.StopLossPrice ?? (p.EntryPrice * 0.93m);
+                        return price >= tp || price <= sl;
+                    }).ToList();
+                    
+                    if (urgentSells.Any())
+                    {
+                        actionType = "BÁN";
+                        var tickers = string.Join(", ", urgentSells.Select(p => p.Symbol));
+                        description = $"Thực hiện bán chủ động các mã đã đạt mốc kỳ vọng hoặc chạm ngưỡng cắt lỗ: **{tickers}**.";
+                        target = "Tối ưu danh mục";
+                    }
+                    else if (positions.Any())
+                    {
+                        actionType = "GIỮ";
+                        description = "Thị trường ổn định. Không có mã nào chạm ngưỡng cảnh báo hôm nay. Tiếp tục nắm giữ danh mục.";
+                        target = "Theo dõi";
+                    }
+                    else
+                    {
+                        actionType = "MUA";
+                        description = "Cơ hội giải ngân: Tích lũy cổ phiếu HPG hoặc SSI ở vùng hỗ trợ hỗ trợ kỹ thuật mạnh.";
+                        target = "HPG / SSI";
+                    }
+                }
+                else if (dayOffset == 1)
+                {
+                    actionType = "THEO DÕI";
+                    description = "Kiểm tra dòng tiền khối ngoại và tự doanh đầu phiên. Theo dõi sát nhóm cổ phiếu ngân hàng và bất động sản.";
+                }
+                else if (dayOffset == 2)
+                {
+                    actionType = "CƠ CẤU";
+                    if (positions.Any())
+                    {
+                        var firstSym = positions.First().Symbol;
+                        description = $"Theo dõi sát **{firstSym}**. Cân nhắc cơ cấu giảm tỷ trọng 20-30% nếu kiểm định đỉnh cũ không thành công.";
+                        target = "Quản trị rủi ro";
+                    }
+                    else
+                    {
+                        description = "Nghiên cứu cơ cấu phân bổ vốn 40% vào nhóm ngành có kết quả kinh doanh quý tăng trưởng tốt.";
+                    }
+                }
+                else if (dayOffset == 3)
+                {
+                    actionType = "MUA THÊM";
+                    if (positions.Any(p => p.PnL < 0))
+                    {
+                        var lossSym = positions.First(p => p.PnL < 0).Symbol;
+                        description = $"Đề xuất mua gom thêm tối đa 10% khối lượng đối với **{lossSym}** tại vùng hỗ trợ kỹ thuật mạnh.";
+                        target = "Mua gia tăng";
+                    }
+                    else
+                    {
+                        description = "Nếu thị trường có rung lắc mạnh, giải ngân thêm 10% vốn vào cổ phiếu SSI để đón đầu sóng phục hồi.";
+                        target = "SSI";
+                    }
+                }
+                else if (dayOffset == totalDays)
+                {
+                    actionType = "TẤT TOÁN";
+                    description = "Đáo hạn kế hoạch giao dịch chứng khoán. Tất toán tất cả các vị thế mở, tính toán kết quả PnL cuối kỳ và chuyển vốn về tài khoản gốc.";
+                    target = $"{targetAmountToUse:N0} đ";
+                }
+                else
+                {
+                    actionType = "GIỮ";
+                    description = "Danh mục đang diễn biến ổn định theo đúng lộ trình của kế hoạch. Tiếp tục giữ lệnh.";
+                }
+
+                dailyCalendar.Add(new AITradingSystem.Models.DailyCalendarItem
+                {
+                    Date = date.ToString("dd/MM/yyyy"),
+                    DayOfWeek = date.ToString("dddd"),
+                    ActionType = actionType,
+                    Description = description,
+                    Target = target,
+                    CumulativePnL = $"{cumulativePnL:N0} đ",
+                    ActualAction = "-"
+                });
+            }
+
+            var planResult = new GlobalPortfolioPlanResult
+            {
+                SuccessProbability = (int)successProbability,
+                PlanSummary = $"Kế hoạch đầu tư tối ưu cho thời gian {totalDays} ngày từ {startDate:dd/MM/yyyy} đến {endDate:dd/MM/yyyy}. Mục tiêu tổng thể: {targetAmountToUse:N0} đ. Vốn đầu tư: {pref.AmountPerTrade:N0} đ. Hiện tại đã hoàn thành {targetProgressPercent(cumulativePnL, targetAmountToUse):N1}% mục tiêu.",
+                Actions = actions,
+                ExpectedContributions = expectedContributions,
+                Rationale = $"Kế hoạch được lập dựa trên bối cảnh thị trường thực tế với vốn ban đầu {pref.AmountPerTrade:N0} đ và số ngày còn lại là {remainingDays} ngày. Phân bổ vốn tập trung vào các mã có xu hướng tốt và tuân thủ chặt chẽ nguyên tắc quản lý rủi ro.",
+                DailyCalendar = dailyCalendar,
+                StartDate = startDate,
+                EndDate = endDate,
+                RemainingDays = remainingDays
+            };
+
+            return JsonSerializer.Serialize(planResult);
+        }
+
+        private static decimal targetProgressPercent(decimal current, decimal target)
+        {
+            if (target <= 0) return 100m;
+            return Math.Round(current / target * 100m, 2);
         }
     }
 

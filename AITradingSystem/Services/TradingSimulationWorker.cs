@@ -127,13 +127,15 @@ namespace AITradingSystem.Services
                             }
 
                             // 4. Kiểm tra các vị thế OPEN hiện tại xem có chạm ngưỡng Cắt lỗ / Chốt lời hay không
-                            // Lấy TẤT CẢ vị thế OPEN (để giám sát cả vị thế thật và AI)
+                            // Lấy TẤT CẢ vị thế OPEN từ bảng TradePositions (vị thế thật của người dùng)
                             var allOpenPositions = await context.TradePositions
                                 .Where(p => p.Symbol == symbol && p.Status == "OPEN")
                                 .ToListAsync(cancellationToken: stoppingToken);
 
-                            // Lấy chỉ vị thế AI tự học (để AI giao dịch riêng, không đụng vào vị thế thật)
-                            var aiOpenPositions = allOpenPositions.Where(p => p.IsAiTrade).ToList();
+                            // Lấy chỉ vị thế AI tự học từ bảng AiTradePositions (để AI giao dịch riêng, không đụng vào vị thế thật)
+                            var aiOpenPositions = await context.AiTradePositions
+                                .Where(p => p.Symbol == symbol && p.Status == "OPEN")
+                                .ToListAsync(cancellationToken: stoppingToken);
 
                             foreach (var pos in allOpenPositions)
                             {
@@ -177,39 +179,8 @@ namespace AITradingSystem.Services
                                     string reason = triggerTakeProfit ? "Chốt lời" : "Cắt lỗ";
                                     string detailReason = triggerTakeProfit ? tpReason : $"chạm ngưỡng cắt lỗ {(pos.StopLossPrice?.ToString("N0") ?? -pref.MaxLossPercentage + "%")}";
 
-                                    if (pos.IsAiTrade)
-                                    {
-                                        _logService.AddLog($"[Cảnh báo] Vị thế AI {symbol} {detailReason}. Giá: {newPrice:N0}đ. Tự động bán đóng vị thế.");
-
-                                        // Đóng vị thế
-                                        pos.ExitPrice = newPrice;
-                                        pos.ExitDate = DateTime.Now;
-                                        pos.Status = "CLOSED";
-                                        pos.PnL = currentPnL;
-                                        context.TradePositions.Update(pos);
-
-                                        // Ghi nhận Order
-                                        var order = new Order
-                                        {
-                                            Symbol = symbol,
-                                            OrderType = "SELL",
-                                            Quantity = pos.Quantity,
-                                            Price = newPrice,
-                                            OrderDate = DateTime.Now,
-                                            Status = "FILLED",
-                                            Rationale = $"Tự động {reason}: {detailReason} trong giả lập."
-                                        };
-                                        context.Orders.Add(order);
-                                        await context.SaveChangesAsync(stoppingToken);
-
-                                        // Rút bài học kinh nghiệm
-                                        _logService.AddLog($"[Tự học] Critic Agent tiến hành phân tích và ghi nhớ bài học từ lệnh đóng {symbol}...");
-                                        await reflectionService.ReflectOnClosedPositionAsync(pos.Id);
-                                    }
-                                    else
-                                    {
-                                        _logService.AddLog($"[CẢNH BÁO TÀI KHOẢN THẬT] Vị thế thật {symbol} {detailReason}! Giá hiện tại: {newPrice:N0}đ, PnL: {currentPnL:N0}đ.");
-                                    }
+                                    // Không xử lý vị thế thật của người dùng
+                                    _logService.AddLog($"[CẢNH BÁO TÀI KHOẢN THẬT] Vị thế thật {symbol} {detailReason}! Giá hiện tại: {newPrice:N0}đ, PnL: {currentPnL:N0}đ.");
                                 }
                             }
 
@@ -228,7 +199,7 @@ namespace AITradingSystem.Services
                                     var investedAmt = qty * newPrice;
 
                                     // Tạo Order BUY
-                                    var order = new Order
+                                    var order = new AiOrder
                                     {
                                         Symbol = symbol,
                                         OrderType = "BUY",
@@ -238,10 +209,10 @@ namespace AITradingSystem.Services
                                         Status = "FILLED",
                                         Rationale = $"[Giả lập] Mua theo tín hiệu AI: {analysis.Rationale}"
                                     };
-                                    context.Orders.Add(order);
+                                    context.AiOrders.Add(order);
 
                                     // Tạo vị thế OPEN mới (chỉ cho AI tự học)
-                                    var pos = new TradePosition
+                                    var aiPos = new AiTradePosition
                                     {
                                         Symbol = symbol,
                                         Quantity = qty,
@@ -249,11 +220,10 @@ namespace AITradingSystem.Services
                                         EntryDate = DateTime.Now,
                                         Status = "OPEN",
                                         PnL = 0,
-                                        IsAiTrade = true,
                                         InvestedAmount = investedAmt,
                                         BudgetAmount = pref.AmountPerTrade
                                     };
-                                    context.TradePositions.Add(pos);
+                                    context.AiTradePositions.Add(aiPos);
                                     await context.SaveChangesAsync(stoppingToken);
 
                                     _logService.AddLog($"[Tự học] Khớp lệnh MUA ảo {symbol} số lượng {qty} cổ, vốn {investedAmt:N0}đ. Chiến lược: {analysis.StrategyApplied}");
@@ -269,9 +239,9 @@ namespace AITradingSystem.Services
                                     activeAiPos.ExitDate = DateTime.Now;
                                     activeAiPos.Status = "CLOSED";
                                     activeAiPos.PnL = (newPrice - activeAiPos.EntryPrice) * activeAiPos.Quantity;
-                                    context.TradePositions.Update(activeAiPos);
+                                    context.AiTradePositions.Update(activeAiPos);
 
-                                    var order = new Order
+                                    var order = new AiOrder
                                     {
                                         Symbol = symbol,
                                         OrderType = "SELL",
@@ -281,11 +251,11 @@ namespace AITradingSystem.Services
                                         Status = "FILLED",
                                         Rationale = $"[Giả lập] Bán theo đề xuất của AI: {analysis.Rationale}"
                                     };
-                                    context.Orders.Add(order);
+                                    context.AiOrders.Add(order);
                                     await context.SaveChangesAsync(stoppingToken);
 
                                     _logService.AddLog($"[Tự học] Khớp lệnh BÁN ảo {symbol}. AI tự rút bài học kinh nghiệm...");
-                                    await reflectionService.ReflectOnClosedPositionAsync(activeAiPos.Id);
+                                    await reflectionService.ReflectOnClosedAiPositionAsync(activeAiPos.Id);
                                 }
                             }
                         }

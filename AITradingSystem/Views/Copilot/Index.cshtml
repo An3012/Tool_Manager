@@ -5,7 +5,7 @@
     var stocks = ViewBag.Stocks as List<AITradingSystem.Controllers.StockViewModel> ?? new List<AITradingSystem.Controllers.StockViewModel>();
     var strategies = ViewBag.Strategies as List<AITradingSystem.Models.TradingStrategy> ?? new List<AITradingSystem.Models.TradingStrategy>();
     var totalPnL = (decimal?)ViewBag.TotalPnL ?? 0;
-    var chartPositions = positions.Where(p => !p.IsAiTrade).ToList();
+    var chartPositions = positions.ToList();
     var positionLabels = chartPositions.Select(p => p.Symbol).ToList();
     var positionProgress = chartPositions.Select(p =>
     {

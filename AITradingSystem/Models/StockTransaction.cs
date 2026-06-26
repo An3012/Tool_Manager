@@ -30,6 +30,9 @@ namespace AITradingSystem.Models
         /// <summary>Phí giao dịch (nếu có)</summary>
         public decimal? Fee { get; set; }
 
+        /// <summary>Thuế giao dịch (chỉ khi bán)</summary>
+        public decimal? Tax { get; set; }
+
         /// <summary>Tổng giá trị = Quantity × Price</summary>
         public decimal TotalAmount { get; set; }
 

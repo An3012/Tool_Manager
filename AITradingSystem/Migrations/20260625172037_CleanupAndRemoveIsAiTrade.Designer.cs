@@ -12,8 +12,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace AITradingSystem.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260625084738_AddPlanStartDate3")]
-    partial class AddPlanStartDate3
+    [Migration("20260625172037_CleanupAndRemoveIsAiTrade")]
+    partial class CleanupAndRemoveIsAiTrade
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -24,6 +24,195 @@ namespace AITradingSystem.Migrations
                 .HasAnnotation("Relational:MaxIdentifierLength", 128);
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
+
+            modelBuilder.Entity("AITradingSystem.Models.AiOrder", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("OrderDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("OrderType")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<decimal>("Price")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Rationale")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Symbol")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("AiOrders");
+                });
+
+            modelBuilder.Entity("AITradingSystem.Models.AiStockTransaction", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<decimal?>("Fee")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<decimal?>("PnlAmount")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<int?>("PositionId")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("Price")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<decimal?>("PriceHighSinceBuy")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<decimal?>("PriceLowSinceBuy")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Symbol")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<decimal?>("TimingScore")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<decimal>("TotalAmount")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<DateTime>("TransactionDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("TransactionType")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("AiStockTransactions");
+                });
+
+            modelBuilder.Entity("AITradingSystem.Models.AiTradeEpisode", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ActionTaken")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("LessonLearned")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("MarketContext")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Rationale")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Result")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("Timestamp")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("AiTradeEpisodes");
+                });
+
+            modelBuilder.Entity("AITradingSystem.Models.AiTradePosition", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<decimal?>("BudgetAmount")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<DateTime>("EntryDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<decimal>("EntryPrice")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<DateTime?>("ExitDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<decimal?>("ExitPrice")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<int?>("ExpectedHoldDays")
+                        .HasColumnType("int");
+
+                    b.Property<decimal?>("InvestedAmount")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<bool>("IsAiTrade")
+                        .HasColumnType("bit");
+
+                    b.Property<decimal>("PnL")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<decimal?>("StopLossPrice")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<string>("Symbol")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<decimal?>("TakeProfitPrice")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<decimal?>("TargetProfitAmount")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("AiTradePositions");
+                });
 
             modelBuilder.Entity("AITradingSystem.Models.Asset", b =>
                 {

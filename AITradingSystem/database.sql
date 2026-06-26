@@ -262,6 +262,85 @@ BEGIN
     PRINT 'Created table StockTransactions';
 END;
 
+-- AI-specific tables: store simulation/training data separately so user-facing DNSE data remains untouched
+IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='Ai_StockTransactions' AND xtype='U')
+BEGIN
+    CREATE TABLE Ai_StockTransactions (
+        Id INT IDENTITY(1,1) PRIMARY KEY,
+        Symbol NVARCHAR(MAX) NOT NULL,
+        TransactionType NVARCHAR(10) NOT NULL,
+        Quantity INT NOT NULL,
+        Price DECIMAL(18,4) NOT NULL,
+        TransactionDate DATETIME2 NOT NULL,
+        Fee DECIMAL(18,4) NULL,
+        TotalAmount DECIMAL(18,4) NOT NULL DEFAULT 0,
+        PnlAmount DECIMAL(18,4) NULL,
+        Source NVARCHAR(50) NOT NULL DEFAULT 'AI_SIMULATION',
+        PositionId INT NULL,
+        Notes NVARCHAR(MAX) NULL,
+        PriceHighSinceBuy DECIMAL(18,4) NULL,
+        PriceLowSinceBuy DECIMAL(18,4) NULL,
+        TimingScore DECIMAL(18,4) NULL
+    );
+    PRINT 'Created table Ai_StockTransactions';
+END;
+
+IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='Ai_TradeEpisodes' AND xtype='U')
+BEGIN
+    CREATE TABLE Ai_TradeEpisodes (
+        Id UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWID(),
+        MarketContext NVARCHAR(MAX) NOT NULL,
+        ActionTaken NVARCHAR(MAX) NOT NULL,
+        Rationale NVARCHAR(MAX) NOT NULL,
+        Result NVARCHAR(MAX) NOT NULL,
+        LessonLearned NVARCHAR(MAX) NOT NULL,
+        Timestamp DATETIME2 NOT NULL
+    );
+    PRINT 'Created table Ai_TradeEpisodes';
+END;
+
+IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='Ai_TradePositions' AND xtype='U')
+BEGIN
+    CREATE TABLE Ai_TradePositions (
+        Id INT IDENTITY(1,1) PRIMARY KEY,
+        Symbol NVARCHAR(MAX) NOT NULL,
+        Quantity INT NOT NULL,
+        EntryPrice DECIMAL(18,4) NOT NULL,
+        ExitPrice DECIMAL(18,4) NULL,
+        EntryDate DATETIME2 NOT NULL,
+        ExitDate DATETIME2 NULL,
+        Status NVARCHAR(MAX) NOT NULL,
+        PnL DECIMAL(18,4) NOT NULL,
+        StopLossPrice DECIMAL(18,4) NULL,
+        TakeProfitPrice DECIMAL(18,4) NULL,
+        IsAiTrade BIT NOT NULL DEFAULT 1,
+        TargetProfitAmount DECIMAL(18,4) NULL,
+        InvestedAmount DECIMAL(18,4) NULL,
+        BudgetAmount DECIMAL(18,4) NULL,
+        ExpectedHoldDays INT NULL
+    );
+    PRINT 'Created table Ai_TradePositions';
+END;
+
+-- AI-specific orders table
+IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='Ai_Orders' AND xtype='U')
+BEGIN
+    CREATE TABLE Ai_Orders (
+        Id INT IDENTITY(1,1) PRIMARY KEY,
+        Symbol NVARCHAR(MAX) NOT NULL,
+        OrderType NVARCHAR(MAX) NOT NULL,
+        Quantity INT NOT NULL,
+        Price DECIMAL(18,4) NOT NULL,
+        OrderDate DATETIME2 NOT NULL,
+        Status NVARCHAR(MAX) NOT NULL,
+        Rationale NVARCHAR(MAX) NULL
+    );
+    PRINT 'Created table Ai_Orders';
+END;
+    );
+    PRINT 'Created table Ai_TradePositions';
+END;
+
 /*
 -- [CẬP NHẬT: 2026-06-25]
 -- Bổ sung cột Ngày bắt đầu kế hoạch cho bảng cấu hình UserPreferences

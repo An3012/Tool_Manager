@@ -82,14 +82,81 @@ namespace AITradingSystem.Controllers
         // MÀN HÌNH MỚI: Danh mục cổ phiếu đã mua (Portfolio)
         public async Task<IActionResult> Portfolio()
         {
-            var positions = await _context.TradePositions.OrderByDescending(p => p.Status == "OPEN").ThenByDescending(p => p.EntryDate).ToListAsync();
+            // 1. Get all positions from DB
+            var dbPositions = await _context.TradePositions.ToListAsync();
+            
+            // 2. Get all DNSE transactions
+            var userTransactions = await _context.StockTransactions.Where(t => t.Source == "DNSE").ToListAsync();
+            
+            // 3. Find all unique symbols that have either a position or transactions
+            var allSymbols = dbPositions.Select(p => p.Symbol)
+                                      .Concat(userTransactions.Select(t => t.Symbol))
+                                      .Distinct()
+                                      .ToList();
+                                      
+            var positions = new List<TradePosition>();
+            foreach (var symbol in allSymbols)
+            {
+                var openPos = dbPositions.FirstOrDefault(p => p.Symbol == symbol && p.Status == "OPEN");
+                if (openPos != null)
+                {
+                    positions.Add(openPos);
+                }
+                else
+                {
+                    var closedPos = dbPositions.FirstOrDefault(p => p.Symbol == symbol && p.Status == "CLOSED");
+                    if (closedPos != null)
+                    {
+                        var symbolSells = userTransactions.Where(t => t.Symbol == symbol && t.TransactionType == "SELL" && t.PnlAmount.HasValue).ToList();
+                        if (symbolSells.Any())
+                        {
+                            closedPos.PnL = symbolSells.Sum(t => t.PnlAmount.Value);
+                        }
+                        positions.Add(closedPos);
+                    }
+                    else
+                    {
+                        // Create a virtual closed position to show the transaction history
+                        var symbolSells = userTransactions.Where(t => t.Symbol == symbol && t.TransactionType == "SELL" && t.PnlAmount.HasValue).ToList();
+                        decimal pnl = symbolSells.Sum(t => t.PnlAmount.Value);
+                        
+                        var entryPrice = 0m;
+                        var firstBuy = userTransactions.OrderBy(t => t.TransactionDate).FirstOrDefault(t => t.Symbol == symbol && t.TransactionType == "BUY");
+                        if (firstBuy != null)
+                        {
+                            entryPrice = firstBuy.Price;
+                        }
+
+                        var virtualPos = new TradePosition
+                        {
+                            Id = -Math.Abs(symbol.GetHashCode()), // Unique negative ID
+                            Symbol = symbol,
+                            Quantity = 0,
+                            EntryPrice = entryPrice,
+                            EntryDate = firstBuy?.TransactionDate ?? DateTime.Now,
+                            Status = "CLOSED",
+                            PnL = pnl
+                        };
+                        positions.Add(virtualPos);
+                    }
+                }
+            }
+
+            // Sort so OPEN positions are first
+            positions = positions
+                .OrderByDescending(p => p.Status == "OPEN")
+                .ThenByDescending(p => p.EntryDate)
+                .ToList();
+
             var closedPositions = positions.Where(p => p.Status == "CLOSED").ToList();
             var stocks = GetDNSEStocks();
             var pref = await GetUserPreference();
             decimal totalPnL = 0;
             decimal totalTargetAmount = 0;
             decimal allocatedBudget = 0;
-            decimal totalRealizedPnL = closedPositions.Sum(p => p.PnL);
+            decimal totalRealizedPnL = userTransactions.Any(t => t.TransactionType == "SELL" && t.PnlAmount.HasValue)
+                ? userTransactions.Where(t => t.TransactionType == "SELL" && t.PnlAmount.HasValue).Sum(t => t.PnlAmount.Value)
+                : closedPositions.Sum(p => p.PnL);
             decimal cumulativePnL = totalRealizedPnL;
             var analysisMap = new Dictionary<int, PositionAnalysis>();
 
@@ -102,8 +169,11 @@ namespace AITradingSystem.Controllers
                 var positionBudget = pos.BudgetAmount.HasValue && pos.BudgetAmount.Value > 0
                     ? pos.BudgetAmount.Value
                     : pref.AmountPerTrade;
-                pos.PnL = (currentPrice - pos.EntryPrice) * pos.Quantity;
-                totalPnL += pos.PnL;
+                if (pos.Status == "OPEN")
+                {
+                    pos.PnL = (currentPrice - pos.EntryPrice) * pos.Quantity;
+                    totalPnL += pos.PnL;
+                }
 
                 // Tính toán phân tích mục tiêu cho từng vị thế
                 var analysis = new PositionAnalysis
@@ -114,14 +184,14 @@ namespace AITradingSystem.Controllers
                 };
                 analysis.CurrentPnL = pos.PnL;
                 analysis.PnlPercent = pos.EntryPrice > 0 ? (currentPrice - pos.EntryPrice) / pos.EntryPrice * 100 : 0;
-                analysis.CanBuyMore = !pos.IsAiTrade && analysis.RemainingBudget > 0;
+                analysis.CanBuyMore = analysis.RemainingBudget > 0;
                 analysis.SuggestedAddAmount = analysis.CanBuyMore
                     ? Math.Min(analysis.RemainingBudget, positionBudget > 0 ? positionBudget : analysis.RemainingBudget)
                     : 0m;
                 analysis.SuggestedAddQuantity = currentPrice > 0
                     ? (int)Math.Floor(analysis.SuggestedAddAmount / currentPrice)
                     : 0;
-                analysis.CanPartialSell = !pos.IsAiTrade && pos.Quantity > 1 && pos.PnL > 0;
+                analysis.CanPartialSell = pos.Quantity > 1 && pos.PnL > 0;
                 analysis.SuggestedSellQuantity = analysis.CanPartialSell
                     ? Math.Max(1, (int)Math.Floor(pos.Quantity * 0.6m))
                     : 0;
@@ -232,8 +302,13 @@ namespace AITradingSystem.Controllers
                     }
                 }
 
+                analysis.SymbolRealizedPnL = userTransactions
+                    .Where(t => t.Symbol == pos.Symbol && t.TransactionType == "SELL" && t.PnlAmount.HasValue)
+                    .Sum(t => t.PnlAmount.Value);
+                analysis.SymbolCumulativePnL = analysis.SymbolRealizedPnL + (pos.Status == "OPEN" ? pos.PnL : 0);
+
                 analysisMap[pos.Id] = analysis;
-                if (pos.Status == "OPEN" && !pos.IsAiTrade)
+                if (pos.Status == "OPEN")
                 {
                     allocatedBudget += analysis.InvestedAmount;
                 }
@@ -254,109 +329,115 @@ namespace AITradingSystem.Controllers
             ViewBag.CumulativePnL = cumulativePnL;
             ViewBag.AnalysisMap = analysisMap;
             
-            var transactions = await _context.StockTransactions.ToListAsync();
+            var transactions = await _context.StockTransactions.Where(t => t.Source == "DNSE").ToListAsync();
             ViewBag.Transactions = transactions;
-
+            
             return View("Portfolio");
         }
 
         [HttpPost]
         public async Task<IActionResult> RunPlanAnalysis()
         {
-            var positions = await _context.TradePositions.Where(p => p.Status == "OPEN").ToListAsync();
-            var pref = await GetUserPreference();
-            var stocks = GetDNSEStocks();
-
-            var plan = new AITradingSystem.Services.GlobalPortfolioPlanResult
+            // 1. Get all positions from DB
+            var dbPositions = await _context.TradePositions.ToListAsync();
+            
+            // 2. Get all DNSE transactions
+            var userTransactions = await _context.StockTransactions.Where(t => t.Source == "DNSE").ToListAsync();
+            
+            // 3. Find all unique symbols that have either a position or transactions
+            var allSymbols = dbPositions.Select(p => p.Symbol)
+                                      .Concat(userTransactions.Select(t => t.Symbol))
+                                      .Distinct()
+                                      .ToList();
+                                      
+            var positions = new List<TradePosition>();
+            foreach (var symbol in allSymbols)
             {
-                SuccessProbability = 75,
-                PlanSummary = $"Dựa trên danh mục hiện tại và mục tiêu đầu tư, hệ thống đã lập kế hoạch tối ưu cơ cấu tài sản. Ngày bắt đầu: {DateTime.Today:dd/MM/yyyy}.",
-                Actions = new List<AITradingSystem.Services.PlanAction>(),
-                ExpectedContributions = new List<AITradingSystem.Services.ExpectedContribution>(),
-                DailyCalendar = new List<AITradingSystem.Models.DailyCalendarItem>(),
-                Rationale = "Đảm bảo phân bổ vốn theo đúng tỷ trọng rủi ro, ưu tiên chốt lời các mã đạt mục tiêu và cắt lỗ sớm các mã vi phạm.",
-                StartDate = DateTime.Today,
-                EndDate = DateTime.Today.AddDays(7),
-                RemainingDays = 7
-            };
-
-            decimal totalAllocated = 0;
-            int dayOffset = 0;
-
-            foreach (var pos in positions)
-            {
-                if (pos.Status == "CLOSED") continue;
-
-                var currentPrice = stocks.FirstOrDefault(s => s.Symbol == pos.Symbol)?.CurrentPrice ?? pos.EntryPrice;
-                var currentPnL = (currentPrice - pos.EntryPrice) * pos.Quantity;
-                
-                decimal targetPrice = pos.TakeProfitPrice ?? (pos.EntryPrice * (1 + (pref.TargetProfitPercentage > 0 ? pref.TargetProfitPercentage / 100m : 0.1m)));
-                decimal stopLossPrice = pos.StopLossPrice ?? (pos.EntryPrice * (1 - (pref.MaxLossPercentage > 0 ? pref.MaxLossPercentage / 100m : 0.05m)));
-                
-                decimal expectedProfit = pos.Quantity * Math.Max(0, targetPrice - pos.EntryPrice);
-                decimal progress = (targetPrice - pos.EntryPrice) > 0 ? (currentPrice - pos.EntryPrice) / (targetPrice - pos.EntryPrice) * 100m : 0;
-                
-                int daysHeld = (DateTime.Today - pos.EntryDate.Date).Days;
-                int remainDays = (pos.ExpectedHoldDays ?? 30) - daysHeld;
-                
-                string action, desc, calDesc;
-                
-                if (currentPrice >= targetPrice)
+                var openPos = dbPositions.FirstOrDefault(p => p.Symbol == symbol && p.Status == "OPEN");
+                if (openPos != null)
                 {
-                    action = "BÁN (CHỐT LỜI)";
-                    desc = $"Đã đạt mục tiêu lợi nhuận ({targetPrice:N0} đ). Tiến độ 100%. Khuyến nghị chốt lời toàn bộ.";
-                    calDesc = $"**{pos.Symbol}**: Giá đã đạt kỳ vọng. Nên thực hiện lệnh chốt ngay hôm nay để thu hồi vốn và lãi.";
-                }
-                else if (currentPrice <= stopLossPrice)
-                {
-                    action = "BÁN (CẮT LỖ)";
-                    desc = $"Đã vi phạm ngưỡng cắt lỗ ({stopLossPrice:N0} đ). Khuyến nghị cắt lỗ khẩn cấp để bảo toàn vốn.";
-                    calDesc = $"**{pos.Symbol}**: Rủi ro cao! Đề xuất đóng vị thế ngay lập tức để tránh lỗ sâu hơn.";
-                }
-                else if (currentPnL > 0)
-                {
-                    action = "NẮM GIỮ (ĐANG LÃI)";
-                    desc = $"Tiến độ {progress:N1}%. Đang có lãi {currentPnL:N0} đ. Đã giữ {daysHeld} ngày. Xu hướng tốt, tiếp tục gồng lãi tới {targetPrice:N0} đ.";
-                    calDesc = $"**{pos.Symbol}**: Tiếp tục nắm giữ. Cân nhắc dời điểm chặn lãi (trailing stop) lên hòa vốn để bảo vệ thành quả.";
+                    positions.Add(openPos);
                 }
                 else
                 {
-                    action = "NẮM GIỮ (CHỜ PHỤC HỒI)";
-                    desc = $"Đang lỗ nhẹ {Math.Abs(currentPnL):N0} đ. Còn cách xa cắt lỗ ({stopLossPrice:N0} đ). Thời gian cầm còn {remainDays} ngày.";
-                    calDesc = $"**{pos.Symbol}**: Giai đoạn tích lũy. Nắm giữ và theo dõi chặt chẽ ngưỡng hỗ trợ gần {stopLossPrice:N0} đ.";
+                    var closedPos = dbPositions.FirstOrDefault(p => p.Symbol == symbol && p.Status == "CLOSED");
+                    if (closedPos != null)
+                    {
+                        var symbolSells = userTransactions.Where(t => t.Symbol == symbol && t.TransactionType == "SELL" && t.PnlAmount.HasValue).ToList();
+                        if (symbolSells.Any())
+                        {
+                            closedPos.PnL = symbolSells.Sum(t => t.PnlAmount.Value);
+                        }
+                        positions.Add(closedPos);
+                    }
+                    else
+                    {
+                        // Create a virtual closed position to show the transaction history
+                        var symbolSells = userTransactions.Where(t => t.Symbol == symbol && t.TransactionType == "SELL" && t.PnlAmount.HasValue).ToList();
+                        decimal pnl = symbolSells.Sum(t => t.PnlAmount.Value);
+                        
+                        var entryPrice = 0m;
+                        var firstBuy = userTransactions.OrderBy(t => t.TransactionDate).FirstOrDefault(t => t.Symbol == symbol && t.TransactionType == "BUY");
+                        if (firstBuy != null)
+                        {
+                            entryPrice = firstBuy.Price;
+                        }
+
+                        var virtualPos = new TradePosition
+                        {
+                            Id = -Math.Abs(symbol.GetHashCode()), // Unique negative ID
+                            Symbol = symbol,
+                            Quantity = 0,
+                            EntryPrice = entryPrice,
+                            EntryDate = firstBuy?.TransactionDate ?? DateTime.Now,
+                            Status = "CLOSED",
+                            PnL = pnl
+                        };
+                        positions.Add(virtualPos);
+                    }
                 }
-                
-                plan.Actions.Add(new AITradingSystem.Services.PlanAction
-                {
-                    Ticker = pos.Symbol,
-                    Action = action,
-                    Description = desc
-                });
-
-                plan.ExpectedContributions.Add(new AITradingSystem.Services.ExpectedContribution
-                {
-                    Ticker = pos.Symbol,
-                    ExpectedProfit = expectedProfit,
-                    Description = $"Mục tiêu chốt tại {targetPrice:N0} đ (Khối lượng: {pos.Quantity} CP)"
-                });
-
-                var planDate = DateTime.Today.AddDays(dayOffset);
-                plan.DailyCalendar.Add(new AITradingSystem.Models.DailyCalendarItem
-                {
-                    Date = planDate.ToString("dd/MM/yyyy"),
-                    DayOfWeek = planDate.ToString("dddd"),
-                    ActionType = action.Contains("BÁN") ? "BÁN" : "GIỮ",
-                    Description = calDesc,
-                    Target = $"{targetPrice:N0} đ",
-                    CumulativePnL = $"{currentPnL:N0} đ",
-                    ActualAction = "-"
-                });
-                
-                dayOffset++;
-                if (dayOffset > 7) dayOffset = 0;
             }
 
-            PopulateActualActions(plan.DailyCalendar, await _context.StockTransactions.ToListAsync());
+            // Sort so OPEN positions are first
+            positions = positions
+                .OrderByDescending(p => p.Status == "OPEN")
+                .ThenByDescending(p => p.EntryDate)
+                .ToList();
+
+            var closedPositions = positions.Where(p => p.Status == "CLOSED").ToList();
+            var stocks = GetDNSEStocks();
+            var pref = await GetUserPreference();
+            
+            decimal totalPnL = 0;
+            decimal totalRealizedPnL = userTransactions.Any(t => t.TransactionType == "SELL" && t.PnlAmount.HasValue)
+                ? userTransactions.Where(t => t.TransactionType == "SELL" && t.PnlAmount.HasValue).Sum(t => t.PnlAmount.Value)
+                : closedPositions.Sum(p => p.PnL);
+            decimal cumulativePnL = totalRealizedPnL;
+
+            var openPositions = positions.Where(p => p.Status == "OPEN").ToList();
+            foreach (var pos in openPositions)
+            {
+                var currentPrice = stocks.FirstOrDefault(s => s.Symbol == pos.Symbol)?.CurrentPrice ?? pos.EntryPrice;
+                pos.PnL = (currentPrice - pos.EntryPrice) * pos.Quantity;
+                totalPnL += pos.PnL;
+            }
+            cumulativePnL += totalPnL;
+
+            decimal totalTargetAmount = 0;
+            foreach (var pos in positions)
+            {
+                if (pos.TargetProfitAmount.HasValue && pos.TargetProfitAmount.Value > 0)
+                {
+                    totalTargetAmount += pos.TargetProfitAmount.Value;
+                }
+            }
+
+            var plan = await _copilotService.GenerateGlobalPortfolioPlanAsync(openPositions, pref, stocks, cumulativePnL, totalTargetAmount);
+
+            if (plan != null && plan.DailyCalendar != null)
+            {
+                PopulateActualActions(plan.DailyCalendar, await _context.StockTransactions.Where(t => t.Source == "DNSE").ToListAsync());
+            }
 
             ViewBag.GlobalPlan = plan;
 
@@ -615,8 +696,8 @@ namespace AITradingSystem.Controllers
 
             if (quantity == 0) quantity = 1; // Đảm bảo giao dịch tối thiểu 1 cổ phiếu cho DNSE
 
-            // 1. Lưu lại Order phát sinh
-            var order = new Order
+            // 1. Lưu lại Order phát sinh (lệnh AI giả lập)
+            var order = new AiOrder
             {
                 Symbol = symbol,
                 OrderType = analysis.Action,
@@ -626,17 +707,17 @@ namespace AITradingSystem.Controllers
                 Status = analysis.Action != "HOLD" ? "FILLED" : "REJECTED",
                 Rationale = analysis.Rationale
             };
-            _context.Orders.Add(order);
+            _context.AiOrders!.Add(order);
 
             // 2. Nếu là lệnh MUA (BUY), tự động mở một vị thế giả định để người dùng theo dõi và chốt lời/cắt lỗ
             if (analysis.Action == "BUY")
             {
-                // CHỈ xóa vị thế AI cũ cùng mã (KHÔNG xóa vị thế thật đồng bộ từ DNSE!)
-                var oldAiPos = await _context.TradePositions.FirstOrDefaultAsync(p => p.Symbol == symbol && p.Status == "OPEN" && p.IsAiTrade);
-                if (oldAiPos != null) _context.TradePositions.Remove(oldAiPos);
+                // CHỈ xóa vị thế AI cũ cùng mã từ bảng AiTradePositions (KHÔNG xóa vị thế thật đồng bộ từ DNSE!)
+                var oldAiPos = await _context.AiTradePositions.FirstOrDefaultAsync(p => p.Symbol == symbol && p.Status == "OPEN");
+                if (oldAiPos != null) _context.AiTradePositions.Remove(oldAiPos);
 
                 var investedAmount = quantity * stock.CurrentPrice;
-                var position = new TradePosition
+                var position = new AiTradePosition
                 {
                     Symbol = symbol,
                     Quantity = quantity,
@@ -646,11 +727,10 @@ namespace AITradingSystem.Controllers
                     PnL = 0,
                     TakeProfitPrice = takeProfitPrice,
                     StopLossPrice = stopLossPrice,
-                    IsAiTrade = true, // Đánh dấu rõ: Đây là lệnh từ AI Copilot, KHÔNG phải vị thế thật
                     InvestedAmount = investedAmount,
                     BudgetAmount = pref.AmountPerTrade
                 };
-                _context.TradePositions.Add(position);
+                _context.AiTradePositions.Add(position);
             }
 
             await _context.SaveChangesAsync();
@@ -810,6 +890,149 @@ namespace AITradingSystem.Controllers
                 historicalCandles = candles
             });
         }
+
+        [HttpGet]
+        public async Task<IActionResult> AdvancedAnalysis(int id)
+        {
+            TradePosition? position = null;
+            
+            if (id < 0)
+            {
+                var userTransactions = await _context.StockTransactions.Where(t => t.Source == "DNSE").ToListAsync();
+                var symbolGroups = userTransactions.GroupBy(t => t.Symbol).ToList();
+                var matchingGroup = symbolGroups.FirstOrDefault(g => -Math.Abs(g.Key.GetHashCode()) == id);
+                if (matchingGroup != null)
+                {
+                    var symbol = matchingGroup.Key;
+                    var symbolSells = matchingGroup.Where(t => t.TransactionType == "SELL" && t.PnlAmount.HasValue).ToList();
+                    decimal virtPnl = symbolSells.Sum(t => t.PnlAmount.Value);
+                    
+                    var entryPrice = 0m;
+                    var firstBuy = matchingGroup.OrderBy(t => t.TransactionDate).FirstOrDefault(t => t.TransactionType == "BUY");
+                    if (firstBuy != null)
+                    {
+                        entryPrice = firstBuy.Price;
+                    }
+
+                    position = new TradePosition
+                    {
+                        Id = id,
+                        Symbol = symbol,
+                        Quantity = 0,
+                        EntryPrice = entryPrice,
+                        EntryDate = firstBuy?.TransactionDate ?? DateTime.Now,
+                        Status = "CLOSED",
+                        PnL = virtPnl
+                    };
+                }
+            }
+            else
+            {
+                position = await _context.TradePositions.FindAsync(id);
+            }
+
+            if (position == null) return NotFound();
+
+            var stocks = GetDNSEStocks();
+            var stock = stocks.FirstOrDefault(s => s.Symbol == position.Symbol);
+            var currentPrice = stock?.CurrentPrice ?? position.EntryPrice;
+            var rsi = stock?.Rsi ?? 50m;
+            var changePercentage = stock?.ChangePercentage ?? 0m;
+
+            var pnl = position.Status == "OPEN" 
+                ? (currentPrice - position.EntryPrice) * position.Quantity 
+                : position.PnL;
+                
+            var pnlPercent = position.EntryPrice > 0 
+                ? (currentPrice - position.EntryPrice) / position.EntryPrice * 100 
+                : 0;
+
+            var symbolTransactions = await _context.StockTransactions
+                .Where(t => t.Symbol == position.Symbol && t.Source == "DNSE" && t.TransactionType == "SELL" && t.TimingScore.HasValue)
+                .ToListAsync();
+                
+            decimal? avgTimingScore = symbolTransactions.Any() 
+                ? symbolTransactions.Average(t => t.TimingScore.Value) 
+                : null;
+
+            var trend = changePercentage >= 0 ? "Uptrend" : "Sideways";
+            var signal = await _copilotService.AnalyzeAndGenerateSignalAsync(position.Symbol, currentPrice, rsi, trend);
+
+            var pref = await GetUserPreference();
+            var fixedBudget = position.BudgetAmount.HasValue && position.BudgetAmount.Value > 0
+                ? position.BudgetAmount.Value
+                : pref.AmountPerTrade;
+            var investedAmount = position.InvestedAmount.HasValue && position.InvestedAmount.Value > 0
+                ? position.InvestedAmount.Value
+                : position.EntryPrice * position.Quantity;
+            var remainingBudget = fixedBudget > 0 ? Math.Max(0m, fixedBudget - investedAmount) : 0m;
+
+            string sellTiming = "Không khuyến nghị";
+            string sellDesc = "Xu hướng giá vẫn tốt, khuyên giữ tiếp vị thế.";
+            if (pnlPercent > 10 || rsi > 70)
+            {
+                sellTiming = "Đề xuất BÁN (Cao)";
+                sellDesc = $"Chỉ báo RSI đạt {rsi:F1} (vùng quá mua), giá đang ở mức đỉnh ngắn hạn. Nên chốt lời để bảo toàn lợi nhuận.";
+            }
+            else if (pnlPercent < -7 || rsi < 30)
+            {
+                sellTiming = "Đề xuất CẮT LỖ (Cao)";
+                sellDesc = $"Vị thế đã chạm ngưỡng cắt lỗ tối đa hoặc RSI quá thấp. Bán để bảo toàn nguồn vốn còn lại.";
+            }
+
+            var targetPrice = position.TakeProfitPrice ?? (position.EntryPrice * 1.15m);
+            var stopLossPrice = position.StopLossPrice ?? (position.EntryPrice * 0.93m);
+
+            int suggestSellQty = position.Quantity > 1 ? (int)Math.Floor(position.Quantity * 0.5m) : 0;
+            decimal estValue = suggestSellQty * currentPrice;
+            decimal estProfit = (currentPrice - position.EntryPrice) * suggestSellQty;
+
+            int suggestBuyQty = remainingBudget >= currentPrice ? (int)Math.Floor(remainingBudget / currentPrice) : 0;
+            decimal suggestBuyVal = suggestBuyQty * currentPrice;
+
+            return Json(new
+            {
+                symbol = position.Symbol,
+                quantity = position.Quantity,
+                entryPrice = position.EntryPrice,
+                currentPrice = currentPrice,
+                pnL = pnl,
+                pnlPercent = pnlPercent,
+                aiSignal = signal.Action,
+                strategyApplied = signal.StrategyApplied,
+                aiRationale = signal.Rationale,
+                sellSuggestion = new
+                {
+                    timing = sellTiming,
+                    targetPrice = targetPrice,
+                    stopLossPrice = stopLossPrice,
+                    description = sellDesc
+                },
+                partialSellSuggestion = new
+                {
+                    timing = suggestSellQty > 0 ? "Khuyến nghị BÁN BỚT" : "Chưa tối ưu",
+                    quantity = suggestSellQty,
+                    estimatedValue = estValue,
+                    estimatedProfit = estProfit,
+                    description = suggestSellQty > 0 
+                        ? $"Bán bớt {suggestSellQty:N0} CP để hiện thực hóa {estProfit:N0}đ lợi nhuận tạm tính, giảm rủi ro điều chỉnh."
+                        : "Không đủ số lượng cổ phiếu tối thiểu để thực hiện bán bớt."
+                },
+                partialBuySuggestion = new
+                {
+                    timing = suggestBuyQty > 0 ? "Có thể MUA THÊM" : "Không khuyến nghị",
+                    remainingBudget = remainingBudget,
+                    suggestedQuantity = suggestBuyQty,
+                    suggestedValue = suggestBuyVal,
+                    description = suggestBuyQty > 0
+                        ? $"Có thể giải ngân thêm {suggestBuyVal:N0}đ (mua {suggestBuyQty:N0} CP) ở vùng giá hiện tại để tối ưu hóa vốn mà không vượt hạn mức."
+                        : "Đã phân bổ hết hạn mức vốn cho mã này hoặc giá trị còn lại không đủ mua thêm 1 cổ phiếu."
+                },
+                avgTimingScore = avgTimingScore,
+                isAiTrade = false
+            });
+        }
+
 
         private List<StockViewModel> GetDNSEStocks()
         {

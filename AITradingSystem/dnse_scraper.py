@@ -115,6 +115,34 @@ def parse_decimal(text):
         return 0.0
 
 
+def is_valid_stock_symbol(symbol):
+    """
+    Validate if a given string is a valid stock symbol and NOT a common UI term/word.
+    """
+    if not symbol:
+        return False
+    symbol = symbol.strip().upper()
+    
+    # Stock symbols are uppercase letters. Usually exactly 3 letters for Vietnamese stocks.
+    # We allow 2 to 6 letters, but standard VN equities are 3.
+    if not re.match(r'^[A-Z]{2,6}$', symbol):
+        return False
+        
+    ignored_words = {
+        "MUA", "BAN", "BÁN", "BUY", "SELL", "HOLD", "OPEN", "CLOSED", 
+        "VND", "USD", "DSE", "CK", "DK", "OK", "KL", "SL", "TL", 
+        "NAV", "CASH", "CP", "ALL", "NEW", "EDIT", "VIEW", "FREE", 
+        "TONG", "TỔNG", "TIEN", "TIỀN", "LÃI", "LỖ", "THUẾ", "PHÍ", 
+        "SUC", "SỨC", "TẠM", "TÍNH", "TÀI", "SẢN", "DANH", "MỤC",
+        "KHỚP", "LỆNH", "GD", "QR", "HOSE", "HNX", "UPCOM"
+    }
+    
+    if symbol in ignored_words:
+        return False
+        
+    return True
+
+
 # =============================================================================
 # PHASE 1: Portfolio / Assets Page Scraping (Primary Approach)
 # =============================================================================
@@ -142,6 +170,19 @@ def navigate_to_portfolio(page):
                 log(f"[WARN] Redirected to login page from {url}")
                 continue
             
+            # Click 'Cổ phiếu' sub-tab if we are on assets page
+            if "tai-san" in page.url:
+                try:
+                    page.evaluate("() => { const el = document.getElementById('onesignal-slidedown-container'); if (el) el.remove(); }")
+                except Exception:
+                    pass
+                
+                co_phieu_tab = page.locator("[role='tab']:has-text('Cổ phiếu')").first
+                if co_phieu_tab.is_visible(timeout=5000):
+                    co_phieu_tab.click(force=True)
+                    time.sleep(3)
+                    log("[INFO] Clicked 'Cổ phiếu' sub-tab under Assets.")
+            
             # Check if portfolio content is visible
             if has_portfolio_content(page):
                 log(f"[INFO] Portfolio content found at {url}!")
@@ -167,6 +208,18 @@ def navigate_to_portfolio(page):
                 log(f"[INFO] Clicked menu item: '{menu_text}'")
                 time.sleep(3)
                 
+                # Click 'Cổ phiếu' sub-tab if we are on assets page
+                if "tai-san" in page.url:
+                    try:
+                        page.evaluate("() => { const el = document.getElementById('onesignal-slidedown-container'); if (el) el.remove(); }")
+                    except Exception:
+                        pass
+                    co_phieu_tab = page.locator("[role='tab']:has-text('Cổ phiếu')").first
+                    if co_phieu_tab.is_visible(timeout=5000):
+                        co_phieu_tab.click(force=True)
+                        time.sleep(3)
+                        log("[INFO] Clicked 'Cổ phiếu' sub-tab under Assets.")
+                
                 if has_portfolio_content(page):
                     log(f"[INFO] Portfolio content found after clicking '{menu_text}'!")
                     return True
@@ -185,14 +238,11 @@ def navigate_to_portfolio(page):
 def has_portfolio_content(page):
     """Check if the current page has portfolio/held stocks content."""
     indicators = [
-        "Cổ phiếu nắm giữ",
-        "Danh mục đầu tư",
-        "Cổ phiếu đang giữ",
-        "KL khả dụng",
-        "Giá vốn",
-        "Giá TB",
-        "Giá thị trường",
-        "Tổng giá trị",
+        "kl mở",
+        "tl tiền mặt",
+        "kl khả dụng",
+        "giá vốn",
+        "giá tb"
     ]
     try:
         page_text = page.inner_text("body") or ""
@@ -263,6 +313,14 @@ def try_scrape_portfolio_table(page):
             except Exception:
                 pass
             
+            # If the table headers don't contain indicators of portfolio holdings, skip it.
+            # Especially skip the watchlist table (headers like 'khớp', 'tổng kl')
+            if headers:
+                is_portfolio_table = any(kw in headers for kw in ["kl mở", "tl tiền mặt", "kl khả dụng", "giá vốn", "giá tb"])
+                if not is_portfolio_table:
+                    log(f"[DEBUG] Table {table_idx} does not look like a portfolio holdings table. Skipping.")
+                    continue
+            
             for row in rows:
                 cells = row.query_selector_all("td")
                 if len(cells) < 3:
@@ -317,7 +375,7 @@ def extract_holding_from_cells(cells, headers):
                 elif text.strip():
                     holding["DealText"] = text.split()[0].upper()
                     
-            elif any(kw in header for kw in ["kl khả dụng", "sl nắm giữ", "số lượng", "kl", "qty", "khối lượng"]):
+            elif any(kw in header for kw in ["kl khả dụng", "sl nắm giữ", "số lượng", "kl", "qty", "khối lượng", "kl mở"]):
                 holding["QtyText"] = str(parse_number(text))
                 
             elif any(kw in header for kw in ["giá tb", "giá vốn", "giá mua tb", "avg", "entry"]):
@@ -326,7 +384,7 @@ def extract_holding_from_cells(cells, headers):
             elif any(kw in header for kw in ["giá tt", "giá thị trường", "giá hiện tại", "market", "current"]):
                 holding["MarketPrice"] = str(parse_decimal(text))
                 
-            elif any(kw in header for kw in ["lãi/lỗ", "lãi lỗ", "pnl", "p&l", "profit", "l/l"]):
+            elif any(kw in header for kw in ["lãi/lỗ", "lãi lỗ", "pnl", "p&l", "profit", "l/l", "lãi"]) and "%" not in header and "tỷ lệ" not in header:
                 val = parse_number(text)
                 holding["PnlText"] = str(val)
                 
@@ -351,13 +409,68 @@ def extract_holding_from_cells(cells, headers):
             holding["PnlText"] = str(parse_number(cell_texts[4]))
     
     # Validate: must have symbol and positive quantity
-    if not holding["DealText"] or not re.match(r'^[A-Z]{2,5}$', holding["DealText"]):
+    if not holding["DealText"] or not is_valid_stock_symbol(holding["DealText"]):
         return None
     
     qty = parse_number(holding["QtyText"])
     if qty <= 0:
         return None
     
+    return holding
+
+
+def extract_holding_from_text(text):
+    """
+    Extract a holding from a card's text block.
+    """
+    # Find stock symbol (2-5 uppercase letters)
+    match = re.search(r'\b([A-Z]{2,5})\b', text)
+    if not match:
+        return None
+    symbol = match.group(1).upper()
+    
+    # Validate stock symbol
+    if not is_valid_stock_symbol(symbol):
+        return None
+        
+    holding = {
+        "DealText": symbol,
+        "QtyText": "0",
+        "OpenTimeText": "",
+        "StatusText": "OPEN",
+        "PnlText": "0",
+        "AvgPrice": "0",
+        "MarketPrice": "0",
+        "InvestedValue": "0",
+    }
+    
+    # Parse numbers from the text block
+    # We look for lines containing keywords
+    lines = text.split('\n')
+    for line in lines:
+        line_lower = line.lower()
+        if any(kw in line_lower for kw in ["kl", "số lượng", "khối lượng", "qty", "mở"]):
+            # Extract number from this line
+            num_match = re.search(r'[\d.,]+', line)
+            if num_match:
+                holding["QtyText"] = str(parse_number(num_match.group(0)))
+        elif any(kw in line_lower for kw in ["lãi", "lỗ", "pnl", "lời"]) and "%" not in line_lower:
+            num_match = re.search(r'[-+]?[\d.,]+', line)
+            if num_match:
+                holding["PnlText"] = str(parse_number(num_match.group(0)))
+        elif any(kw in line_lower for kw in ["giá tb", "giá vốn", "avg"]):
+            num_match = re.search(r'[\d.,]+', line)
+            if num_match:
+                holding["AvgPrice"] = str(parse_decimal(num_match.group(0)))
+        elif any(kw in line_lower for kw in ["thị trường", "hiện tại", "market"]):
+            num_match = re.search(r'[\d.,]+', line)
+            if num_match:
+                holding["MarketPrice"] = str(parse_decimal(num_match.group(0)))
+                
+    # Validate: qty must be positive
+    if parse_number(holding["QtyText"]) <= 0:
+        return None
+        
     return holding
 
 
@@ -425,7 +538,7 @@ def try_scrape_portfolio_generic(page):
             symbol = symbol.upper()
             if symbol in seen:
                 continue
-            if symbol in ("OPEN", "CLOSED", "BUY", "SELL", "HOLD", "VND", "USD"):
+            if not is_valid_stock_symbol(symbol):
                 continue
             
             qty = parse_number(qty_str)
@@ -663,6 +776,167 @@ def scrape_and_aggregate_deals(page, context):
 
 
 # =============================================================================
+# PHASE 3: Detailed Transaction Scraping
+# =============================================================================
+
+def scrape_order_history(page, context):
+    """
+    Phase 3: Scrape order history ('Lịch sử lệnh') to get detailed buy/sell transactions.
+    """
+    from datetime import datetime, timedelta
+    
+    log("[INFO] ===== PHASE 3: Order History ('Lịch sử lệnh') Scraping =====")
+    
+    # 1. Click 'Lịch sử lệnh' tab/button
+    try:
+        # Remove any overlapping push notification pop-ups (OneSignal)
+        try:
+            page.evaluate("() => { const el = document.getElementById('onesignal-slidedown-container'); if (el) el.remove(); }")
+        except Exception:
+            pass
+
+        button = page.locator("button:has-text('Lịch sử lệnh')").first
+        if not button.is_visible(timeout=5000):
+            log("[WARN] 'Lịch sử lệnh' button not visible. Attempting to navigate back to deal report first...")
+            page.goto("https://entradex.dnse.com.vn/bao-cao/deal", wait_until="domcontentloaded", timeout=20000)
+            time.sleep(3)
+            # Try removing onesignal again on fresh load
+            try:
+                page.evaluate("() => { const el = document.getElementById('onesignal-slidedown-container'); if (el) el.remove(); }")
+            except Exception:
+                pass
+            button = page.locator("button:has-text('Lịch sử lệnh')").first
+            
+        if button.is_visible():
+            button.click(force=True)
+            time.sleep(3)
+            log("[INFO] Clicked 'Lịch sử lệnh' tab.")
+        else:
+            log("[ERROR] 'Lịch sử lệnh' tab is not accessible.")
+            return []
+    except Exception as e:
+        log(f"[ERROR] Failed to navigate to order history: {e}")
+        return []
+        
+    transactions = []
+    seen_keys = set()
+    
+    # Generate date range slices (past 5 years, same as Phase 2)
+    end_dt = datetime.now()
+    slices = []
+    for years_back in range(5):
+        t = end_dt - timedelta(days=365 * years_back)
+        f = end_dt - timedelta(days=365 * (years_back + 1))
+        slices.append((f.strftime("%d/%m/%Y"), t.strftime("%d/%m/%Y")))
+        
+    for idx, (fromDate, toDate) in enumerate(slices):
+        log(f"[INFO] Order History: Querying range slice {idx+1}/5: {fromDate} to {toDate}")
+        try:
+            to_date_input = page.locator("#deal-report-filter-toDate")
+            if to_date_input.is_visible():
+                to_date_input.click()
+                to_date_input.press("Control+A")
+                to_date_input.press("Delete")
+                to_date_input.fill(toDate)
+                to_date_input.press("Enter")
+                time.sleep(0.5)
+
+            from_date_input = page.locator("#deal-report-filter-fromDate")
+            if from_date_input.is_visible():
+                from_date_input.click()
+                from_date_input.press("Control+A")
+                from_date_input.press("Delete")
+                from_date_input.fill(fromDate)
+                from_date_input.press("Enter")
+                time.sleep(3)
+                
+            has_next = True
+            page_num = 1
+            while has_next:
+                log(f"[INFO] Scrape page {page_num} for range {fromDate} - {toDate}")
+                
+                # Scrape current order history table rows
+                rows = page.locator("table tbody tr").all()
+                log(f"[INFO] Found {len(rows)} rows on current page")
+                
+                for row in rows:
+                    cells = row.locator("td").all_inner_texts()
+                    if len(cells) < 10:
+                        continue
+                        
+                    # Columns: ['Lệnh', 'Mã/ Tiền mặt', 'Ngày GD', 'Giá đặt', 'Giá khớp', 'Khối lượng', 'Phí trả Sở', 'Phí DNSE', 'Thuế', 'Trạng thái']
+                    order_type_raw = cells[0].strip() # 'M' or 'B'
+                    symbol_raw = cells[1].strip() # 'POW\n\n100%'
+                    date_raw = cells[2].strip() # '18/06/26'
+                    price_matched_raw = cells[4].strip() # '14.15' or '-'
+                    qty_matched_raw = cells[5].strip() # '23/23' or '0/20'
+                    fee_so_raw = cells[6].strip() # '88'
+                    fee_dnse_raw = cells[7].strip() # '390'
+                    tax_raw = cells[8].strip() # '325'
+                    status_raw = cells[9].strip() # 'Đã khớp' or 'Đã hủy'
+                    
+                    if not status_raw or "khớp" not in status_raw.lower():
+                        continue # Only process matched orders
+                        
+                    # Extract values
+                    symbol = symbol_raw.split()[0].upper()
+                    
+                    # Quantity
+                    qty_parts = qty_matched_raw.split('/')
+                    qty = int(qty_parts[0]) if qty_parts else 0
+                    if qty <= 0:
+                        continue
+                        
+                    # Price (in thousands, convert to full VND)
+                    try:
+                        price = float(price_matched_raw.replace(',', '')) * 1000.0
+                    except ValueError:
+                        continue
+                        
+                    # Fees and Tax
+                    fee_so = float(fee_so_raw.replace(',', '')) if fee_so_raw != '-' else 0.0
+                    fee_dnse = float(fee_dnse_raw.replace(',', '')) if fee_dnse_raw != '-' else 0.0
+                    fee = fee_so + fee_dnse
+                    tax = float(tax_raw.replace(',', '')) if tax_raw != '-' else 0.0
+                    
+                    # Convert date '18/06/26' to '18/06/2026 09:00:00'
+                    date_parts = date_raw.split('/')
+                    if len(date_parts) == 3:
+                        day, month, year = date_parts
+                        if len(year) == 2:
+                            year = "20" + year
+                        date_str = f"{day}/{month}/{year} 09:00:00"
+                    else:
+                        date_str = date_raw
+                        
+                    transaction_type = "BUY" if order_type_raw == 'M' else "SELL"
+                    
+                    # Unique key to avoid duplicates across date slice boundaries
+                    key = (symbol, transaction_type, str(qty), str(price), date_str)
+                    if key not in seen_keys:
+                        seen_keys.add(key)
+                        transactions.append({
+                            "Symbol": symbol,
+                            "Type": transaction_type,
+                            "Qty": qty,
+                            "Price": price,
+                            "Date": date_str,
+                            "Fee": fee,
+                            "Tax": tax
+                        })
+                        
+                if click_next_page(page):
+                    page_num += 1
+                else:
+                    has_next = False
+                    
+        except Exception as ex:
+            log(f"[WARN] Error scraping order history date slice {fromDate} to {toDate}: {ex}")
+            
+    return transactions
+
+
+# =============================================================================
 # Login & Main Flow
 # =============================================================================
 
@@ -872,6 +1146,19 @@ def main():
                 
                 OUTPUT_JSON.write_text(json.dumps(holdings, ensure_ascii=False, indent=4), encoding="utf-8")
                 log(f"[INFO] Saved JSON to {OUTPUT_JSON}")
+
+                # === PHASE 3: Detailed Transaction Scraping ===
+                try:
+                    transactions = scrape_order_history(page, context)
+                    if transactions:
+                        log(f"[INFO] Phase 3 SUCCESS: Found {len(transactions)} detailed transactions.")
+                        tx_path = BASE_DIR / "dnse_transactions.json"
+                        tx_path.write_text(json.dumps(transactions, ensure_ascii=False, indent=4), encoding="utf-8")
+                        log(f"[INFO] Saved transactions JSON to {tx_path}")
+                    else:
+                        log("[WARN] Phase 3: No detailed transactions found.")
+                except Exception as tx_ex:
+                    log(f"[ERROR] Phase 3 detailed transaction scraping failed: {tx_ex}")
             else:
                 log("[ERROR] No holdings found from any scraping method.")
                 browser.close()

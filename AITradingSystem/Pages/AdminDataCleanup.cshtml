@@ -1,0 +1,126 @@
+@page "/admin/data-cleanup"
+@using AITradingSystem.Pages
+@model AdminDataCleanupModel
+@{
+    ViewData["Title"] = "Admin - Xóa Dữ Liệu";
+    Layout = "~/Pages/Shared/_Layout.cshtml";
+}
+
+<div class="container mt-5">
+    <div class="row">
+        <div class="col-md-10 offset-md-1">
+            <div class="card">
+                <div class="card-header bg-danger text-white">
+                    <h3>⚠️ Admin - Xóa Dữ Liệu Người Dùng</h3>
+                </div>
+                <div class="card-body">
+                    <!-- Thông báo -->
+                    @if (!string.IsNullOrEmpty(Model.Message))
+                    {
+                        <div class="alert alert-@(Model.IsSuccess ? "success" : "danger") alert-dismissible fade show">
+                            @Model.Message
+                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        </div>
+                    }
+
+                    <!-- Thống kê dữ liệu hiện tại -->
+                    <h5 class="mt-4 mb-3">📊 Dữ Liệu Hiện Tại:</h5>
+                    <table class="table table-sm table-striped">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Bảng</th>
+                                <th class="text-end">Số lượng bản ghi</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var kvp in Model.DataCounts)
+                            {
+                                <tr>
+                                    <td><strong>@kvp.Key</strong></td>
+                                    <td class="text-end">
+                                        @if (kvp.Value > 0)
+                                        {
+                                            <span class="badge bg-warning">@kvp.Value</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-secondary">0</span>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+
+                    <!-- Phần thao tác -->
+                    <div class="alert alert-info mt-4">
+                        <strong>ℹ️ Lưu ý:</strong>
+                        <ul class="mb-0 mt-2">
+                            <li>✅ <strong>Bảng AI</strong> (AiTradePositions, AiOrders) sẽ <strong>KHÔNG bị xóa</strong></li>
+                            <li>🗑️ <strong>Bảng Người Dùng</strong> sẽ bị xóa hoàn toàn</li>
+                            <li>⚠️ <strong>KHÔNG CÓ CÁCH HOÀN TÁC</strong> - Hãy backup trước khi xóa!</li>
+                        </ul>
+                    </div>
+
+                    <!-- Nút xóa -->
+                    <div class="mt-4">
+                        <h5>Chọn hành động:</h5>
+
+                        <form method="post" class="d-inline-block me-3">
+                            <button type="submit" asp-page-handler="DeletePositionsOrders" 
+                                    class="btn btn-warning btn-lg"
+                                    onclick="return confirm('❌ Xác nhận xóa TradePositions + Orders?\n\nBạn không thể hoàn tác!');">
+                                🗑️ Xóa TradePositions + Orders
+                            </button>
+                        </form>
+
+                        <form method="post" class="d-inline-block">
+                            <button type="submit" asp-page-handler="DeleteAll" 
+                                    class="btn btn-danger btn-lg"
+                                    onclick="return confirm('🚨 XÓA TẤT CẢ DỮ LIỆU NGƯỜI DÙNG?\n\n⚠️ KHÔNG CÓ CÁCH HOÀN TÁC!\n\nNhập YES để xác nhận:', 'YES');">
+                                🗑️🗑️ Xóa TẤT CẢ (Positions + Orders + Transactions + Episodes)
+                            </button>
+                        </form>
+                    </div>
+
+                    <!-- Hướng dẫn tiếp theo -->
+                    <div class="alert alert-primary mt-4">
+                        <strong>📌 Bước tiếp theo:</strong>
+                        <ol class="mb-0 mt-2">
+                            <li>Xóa dữ liệu ở trên</li>
+                            <li>Chạy <code>DnseService.SyncFromDnseAsync()</code> để nạp dữ liệu mới</li>
+                            <li>Hoặc chạy <code>DnseService.SeedSampleDataAsync()</code> để load dữ liệu mẫu</li>
+                        </ol>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    body {
+        background-color: #f8f9fa;
+    }
+
+    .card {
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+
+    .card-header {
+        padding: 1.5rem;
+        font-weight: 600;
+    }
+
+    .btn-lg {
+        padding: 0.75rem 1.5rem;
+        font-size: 1rem;
+        font-weight: 600;
+    }
+
+    code {
+        background-color: #f0f0f0;
+        padding: 0.2rem 0.4rem;
+        border-radius: 3px;
+    }
+</style>

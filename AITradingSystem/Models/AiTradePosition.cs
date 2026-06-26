@@ -3,7 +3,7 @@ using System.ComponentModel.DataAnnotations;
 
 namespace AITradingSystem.Models
 {
-    public class TradePosition
+    public class AiTradePosition
     {
         [Key]
         public int Id { get; set; }
@@ -11,7 +11,7 @@ namespace AITradingSystem.Models
         public int Quantity { get; set; }
         public decimal EntryPrice { get; set; }
         public decimal? ExitPrice { get; set; }
-        public DateTime EntryDate { get; set; }
+        public DateTime EntryDate { get; set; } = DateTime.UtcNow;
         public DateTime? ExitDate { get; set; }
         public string Status { get; set; } = "OPEN";
         public decimal PnL { get; set; }
