@@ -5,7 +5,7 @@ namespace AITradingSystem.Services
 {
     public class GlobalPortfolioPlanResult
     {
-        public int SuccessProbability { get; set; } = 50;
+        public decimal SuccessProbability { get; set; } = 50m;
         public string PlanSummary { get; set; } = string.Empty;
         public List<PlanAction> Actions { get; set; } = new List<PlanAction>();
         public List<ExpectedContribution> ExpectedContributions { get; set; } = new List<ExpectedContribution>();

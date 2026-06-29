@@ -1,9 +1,9 @@
-using Microsoft.AspNetCore.Mvc;
+using System.Diagnostics;
 using AITradingSystem.Data;
 using AITradingSystem.Models;
 using AITradingSystem.Services;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using System.Diagnostics;
 
 namespace AITradingSystem.Controllers
 {
@@ -16,9 +16,9 @@ namespace AITradingSystem.Controllers
         private readonly SimulationLogService _simulationLogService;
 
         public CopilotController(
-            AppDbContext context, 
-            DnseService dnseService, 
-            TradingCopilotService copilotService, 
+            AppDbContext context,
+            DnseService dnseService,
+            TradingCopilotService copilotService,
             ReflectionService reflectionService,
             SimulationLogService simulationLogService)
         {
@@ -43,6 +43,66 @@ namespace AITradingSystem.Controllers
                 TempData["ErrorMessage"] = "Đồng bộ thất bại. Vui lòng kiểm tra cấu hình API Key của DNSE.";
             }
             return RedirectToAction(nameof(Index));
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> AddWatchlistSymbol(string symbol)
+        {
+            if (string.IsNullOrWhiteSpace(symbol))
+            {
+                TempData["ErrorMessage"] = "Mã cổ phiếu không hợp lệ.";
+                return RedirectToAction(nameof(Index));
+            }
+
+            symbol = symbol.Trim().ToUpper();
+
+            // Thử lấy giá thật từ API trước
+            try
+            {
+                await _simulationLogService.FetchRealPricesAsync(new List<string> { symbol });
+            }
+            catch
+            {
+                // Bỏ qua lỗi kết nối mạng/API
+            }
+
+            // Nếu mã chưa tồn tại trong danh sách thì tự động tạo mới
+            var stock = _simulationLogService.GetStockState(symbol);
+            if (stock == null)
+            {
+                _simulationLogService.UpdateOrAddStockState(symbol, 20000m, 0m, 50m, $"CTCP {symbol}");
+                TempData["SuccessMessage"] = $"Đã thêm thành công mã {symbol} vào Watchlist!";
+            }
+            else
+            {
+                TempData["SuccessMessage"] = $"Mã {symbol} đã sẵn có trong Watchlist.";
+            }
+
+            return RedirectToAction(nameof(Index));
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> GetPlanDetails(int id)
+        {
+            var plan = await _context.InvestmentPlans.FindAsync(id);
+            if (plan == null) return NotFound();
+
+            return Json(new
+            {
+                id = plan.Id,
+                runDate = plan.RunDate.ToString("dd/MM/yyyy HH:mm"),
+                startDate = plan.StartDate.ToString("dd/MM/yyyy"),
+                endDate = plan.EndDate.ToString("dd/MM/yyyy"),
+                capital = plan.Capital,
+                targetProfit = plan.TargetProfit,
+                actualProfit = plan.ActualProfit,
+                remainingProfitNeeded = plan.RemainingProfitNeeded,
+                daysRemainingAtRun = plan.DaysRemainingAtRun,
+                successProbability = plan.SuccessProbability,
+                status = plan.Status,
+                aiVersion = "v1.2",
+                dailyCalendarJson = plan.DailyCalendarJson
+            });
         }
 
         // Dashboard chính - Chỉ hiện thị tín hiệu và biểu đồ chung
@@ -84,16 +144,16 @@ namespace AITradingSystem.Controllers
         {
             // 1. Get all positions from DB
             var dbPositions = await _context.TradePositions.ToListAsync();
-            
+
             // 2. Get all DNSE transactions
             var userTransactions = await _context.StockTransactions.Where(t => t.Source == "DNSE").ToListAsync();
-            
+
             // 3. Find all unique symbols that have either a position or transactions
             var allSymbols = dbPositions.Select(p => p.Symbol)
                                       .Concat(userTransactions.Select(t => t.Symbol))
                                       .Distinct()
                                       .ToList();
-                                      
+
             var positions = new List<TradePosition>();
             foreach (var symbol in allSymbols)
             {
@@ -119,7 +179,7 @@ namespace AITradingSystem.Controllers
                         // Create a virtual closed position to show the transaction history
                         var symbolSells = userTransactions.Where(t => t.Symbol == symbol && t.TransactionType == "SELL" && t.PnlAmount.HasValue).ToList();
                         decimal pnl = symbolSells.Sum(t => t.PnlAmount.Value);
-                        
+
                         var entryPrice = 0m;
                         var firstBuy = userTransactions.OrderBy(t => t.TransactionDate).FirstOrDefault(t => t.Symbol == symbol && t.TransactionType == "BUY");
                         if (firstBuy != null)
@@ -315,8 +375,18 @@ namespace AITradingSystem.Controllers
             }
 
             cumulativePnL += totalPnL;
-            decimal remainingOtherBudget = Math.Max(0m, pref.TargetAmount - allocatedBudget);
+            decimal remainingOtherBudget = Math.Max(0m, pref.AmountPerTrade - allocatedBudget);
 
+            DateTime planStartDate = pref.PlanStartDate ?? DateTime.Today;
+            decimal planRealizedPnL = userTransactions
+                .Where(t => t.TransactionType == "SELL" && t.PnlAmount.HasValue && t.TransactionDate >= planStartDate)
+                .Sum(t => t.PnlAmount.Value);
+            decimal planUnrealizedPnL = positions
+                .Where(p => p.Status == "OPEN" && p.EntryDate >= planStartDate)
+                .Sum(p => p.PnL);
+            decimal planPnL = planRealizedPnL + planUnrealizedPnL;
+
+            ViewBag.PlanPnL = planPnL;
             ViewBag.Positions = positions;
             ViewBag.ClosedPositions = closedPositions;
             ViewBag.Stocks = stocks;
@@ -328,10 +398,61 @@ namespace AITradingSystem.Controllers
             ViewBag.TotalRealizedPnL = totalRealizedPnL;
             ViewBag.CumulativePnL = cumulativePnL;
             ViewBag.AnalysisMap = analysisMap;
-            
+
             var transactions = await _context.StockTransactions.Where(t => t.Source == "DNSE").ToListAsync();
             ViewBag.Transactions = transactions;
-            
+
+            // Load plan history and latest active plan for persistence on page load
+            var pastPlans = await _context.InvestmentPlans
+                .OrderByDescending(p => p.RunDate)
+                .ToListAsync();
+            ViewBag.HistoryPlans = pastPlans;
+
+            var latestPlan = pastPlans.FirstOrDefault();
+            if (latestPlan != null)
+            {
+                ViewBag.LatestPlanDb = latestPlan;
+                if (!string.IsNullOrEmpty(latestPlan.DailyCalendarJson))
+                {
+                    try
+                    {
+                        var options = new System.Text.Json.JsonSerializerOptions
+                        {
+                            PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+                            NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowReadingFromString | System.Text.Json.Serialization.JsonNumberHandling.WriteAsString,
+                            Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() }
+                        };
+                        var planResult = System.Text.Json.JsonSerializer.Deserialize<AITradingSystem.Services.GlobalPortfolioPlanResult>(latestPlan.DailyCalendarJson, options);
+                        
+                        if (latestPlan.Status == "Active" && planResult != null)
+                        {
+                            // 1. Sync actual actions in calendar
+                            PopulateActualActions(planResult.DailyCalendar, userTransactions);
+                            
+                            // 2. Sync actual profit & remaining profit
+                            latestPlan.ActualProfit = planPnL;
+                            latestPlan.RemainingProfitNeeded = Math.Max(0m, latestPlan.TargetProfit - planPnL);
+                            
+                            // 3. Sync remaining days
+                            int daysLeft = (latestPlan.EndDate.Date - DateTime.Today).Days;
+                            latestPlan.DaysRemainingAtRun = daysLeft >= 0 ? daysLeft : 0;
+                            
+                            // 4. Update DailyCalendarJson
+                            latestPlan.DailyCalendarJson = System.Text.Json.JsonSerializer.Serialize(planResult, options);
+                            
+                            _context.InvestmentPlans.Update(latestPlan);
+                            await _context.SaveChangesAsync();
+                        }
+                        
+                        ViewBag.GlobalPlan = planResult;
+                    }
+                    catch (Exception)
+                    {
+                        // Ignore deserialization exceptions
+                    }
+                }
+            }
+
             return View("Portfolio");
         }
 
@@ -340,16 +461,16 @@ namespace AITradingSystem.Controllers
         {
             // 1. Get all positions from DB
             var dbPositions = await _context.TradePositions.ToListAsync();
-            
+
             // 2. Get all DNSE transactions
             var userTransactions = await _context.StockTransactions.Where(t => t.Source == "DNSE").ToListAsync();
-            
+
             // 3. Find all unique symbols that have either a position or transactions
             var allSymbols = dbPositions.Select(p => p.Symbol)
                                       .Concat(userTransactions.Select(t => t.Symbol))
                                       .Distinct()
                                       .ToList();
-                                      
+
             var positions = new List<TradePosition>();
             foreach (var symbol in allSymbols)
             {
@@ -375,7 +496,7 @@ namespace AITradingSystem.Controllers
                         // Create a virtual closed position to show the transaction history
                         var symbolSells = userTransactions.Where(t => t.Symbol == symbol && t.TransactionType == "SELL" && t.PnlAmount.HasValue).ToList();
                         decimal pnl = symbolSells.Sum(t => t.PnlAmount.Value);
-                        
+
                         var entryPrice = 0m;
                         var firstBuy = userTransactions.OrderBy(t => t.TransactionDate).FirstOrDefault(t => t.Symbol == symbol && t.TransactionType == "BUY");
                         if (firstBuy != null)
@@ -407,7 +528,7 @@ namespace AITradingSystem.Controllers
             var closedPositions = positions.Where(p => p.Status == "CLOSED").ToList();
             var stocks = GetDNSEStocks();
             var pref = await GetUserPreference();
-            
+
             decimal totalPnL = 0;
             decimal totalRealizedPnL = userTransactions.Any(t => t.TransactionType == "SELL" && t.PnlAmount.HasValue)
                 ? userTransactions.Where(t => t.TransactionType == "SELL" && t.PnlAmount.HasValue).Sum(t => t.PnlAmount.Value)
@@ -434,14 +555,59 @@ namespace AITradingSystem.Controllers
 
             var plan = await _copilotService.GenerateGlobalPortfolioPlanAsync(openPositions, pref, stocks, cumulativePnL, totalTargetAmount);
 
-            if (plan != null && plan.DailyCalendar != null)
+            if (plan != null)
             {
-                PopulateActualActions(plan.DailyCalendar, await _context.StockTransactions.Where(t => t.Source == "DNSE").ToListAsync());
+                if (plan.DailyCalendar != null)
+                {
+                    PopulateActualActions(plan.DailyCalendar, await _context.StockTransactions.Where(t => t.Source == "DNSE").ToListAsync());
+                }
+
+                var targetAmountToUse = pref.TargetAmount;
+                var planStartDate = pref.PlanStartDate ?? DateTime.Today;
+                decimal planRealizedPnL = userTransactions
+                    .Where(t => t.TransactionType == "SELL" && t.PnlAmount.HasValue && t.TransactionDate >= planStartDate)
+                    .Sum(t => t.PnlAmount.Value);
+                decimal planUnrealizedPnL = positions
+                    .Where(p => p.Status == "OPEN" && p.EntryDate >= planStartDate)
+                    .Sum(p => p.PnL);
+                decimal planPnL = planRealizedPnL + planUnrealizedPnL;
+
+                var remainingProfitNeeded = Math.Max(0m, targetAmountToUse - planPnL);
+                var options = new System.Text.Json.JsonSerializerOptions
+                {
+                    PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+                    NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowReadingFromString | System.Text.Json.Serialization.JsonNumberHandling.WriteAsString,
+                    Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() }
+                };
+                var investmentPlan = new InvestmentPlan
+                {
+                    RunDate = DateTime.Now,
+                    StartDate = plan.StartDate == default ? (pref.PlanStartDate ?? DateTime.Today) : plan.StartDate,
+                    EndDate = plan.EndDate == default ? DateTime.Today : plan.EndDate,
+                    Capital = pref.AmountPerTrade,
+                    TargetProfit = targetAmountToUse,
+                    ActualProfit = planPnL,
+                    RemainingProfitNeeded = remainingProfitNeeded,
+                    DaysRemainingAtRun = plan.RemainingDays,
+                    SuccessProbability = (decimal)plan.SuccessProbability,
+                    Status = "Active",
+                    DailyCalendarJson = System.Text.Json.JsonSerializer.Serialize(plan, options)
+                };
+
+                _context.InvestmentPlans?.Add(investmentPlan);
+                await _context.SaveChangesAsync();
+                TempData["LatestPlanId"] = investmentPlan.Id;
             }
 
-            ViewBag.GlobalPlan = plan;
+            // Populate history for the partial view
+            ViewBag.HistoryPlans = await _context.InvestmentPlans
+                .OrderByDescending(p => p.RunDate)
+                .ToListAsync();
 
-            return await Portfolio();
+            ViewBag.GlobalPlan = plan;
+            ViewBag.Preference = pref;
+
+            return PartialView("_AiPlanPartial");
         }
 
         private void PopulateActualActions(List<AITradingSystem.Models.DailyCalendarItem> calendar, List<StockTransaction> transactions)
@@ -592,7 +758,7 @@ namespace AITradingSystem.Controllers
                     existing.StopLossAmount = model.StopLossAmount;
                     existing.RiskTolerance = model.RiskTolerance;
                     existing.PlanStartDate = model.PlanStartDate;
-                    
+
                     _context.UserPreferences.Update(existing);
                 }
                 await _context.SaveChangesAsync();
@@ -660,11 +826,11 @@ namespace AITradingSystem.Controllers
                 existing.DnsePassword = string.Empty;
                 existing.DnseToken = string.Empty;
                 _context.UserPreferences.Update(existing);
-                
+
                 // Xóa các vị thế OPEN đã đồng bộ từ trước
                 var openPositions = await _context.TradePositions.Where(p => p.Status == "OPEN").ToListAsync();
                 _context.TradePositions.RemoveRange(openPositions);
-                
+
                 await _context.SaveChangesAsync();
                 TempData["SuccessMessage"] = "Đã hủy liên kết tài khoản DNSE (DNSE) thành công!";
             }
@@ -841,18 +1007,19 @@ namespace AITradingSystem.Controllers
             {
                 var date = DateTime.Today.AddDays(-i);
                 if (date.DayOfWeek == DayOfWeek.Saturday || date.DayOfWeek == DayOfWeek.Sunday) continue;
-                
+
                 decimal change = (decimal)((random.NextDouble() - 0.4) * 0.04);
                 current = current * (1 + change);
-                
+
                 decimal high = current * (1 + (decimal)(random.NextDouble() * 0.02));
                 decimal low = current * (1 - (decimal)(random.NextDouble() * 0.02));
                 decimal open = low + (high - low) * (decimal)random.NextDouble();
                 decimal close = low + (high - low) * (decimal)random.NextDouble();
-                
+
                 if (i == 0) close = stock.CurrentPrice;
 
-                candles.Add(new {
+                candles.Add(new
+                {
                     time = date.ToString("yyyy-MM-dd"),
                     open = open,
                     high = high,
@@ -869,7 +1036,8 @@ namespace AITradingSystem.Controllers
                 askOrders.Add(new { price = stock.CurrentPrice + (i * 100), volume = random.Next(100, 5000) });
             }
 
-            return Json(new {
+            return Json(new
+            {
                 symbol = stock.Symbol,
                 exchange = stock.Exchange,
                 companyName = stock.CompanyName,
@@ -895,7 +1063,7 @@ namespace AITradingSystem.Controllers
         public async Task<IActionResult> AdvancedAnalysis(int id)
         {
             TradePosition? position = null;
-            
+
             if (id < 0)
             {
                 var userTransactions = await _context.StockTransactions.Where(t => t.Source == "DNSE").ToListAsync();
@@ -906,7 +1074,7 @@ namespace AITradingSystem.Controllers
                     var symbol = matchingGroup.Key;
                     var symbolSells = matchingGroup.Where(t => t.TransactionType == "SELL" && t.PnlAmount.HasValue).ToList();
                     decimal virtPnl = symbolSells.Sum(t => t.PnlAmount.Value);
-                    
+
                     var entryPrice = 0m;
                     var firstBuy = matchingGroup.OrderBy(t => t.TransactionDate).FirstOrDefault(t => t.TransactionType == "BUY");
                     if (firstBuy != null)
@@ -939,20 +1107,20 @@ namespace AITradingSystem.Controllers
             var rsi = stock?.Rsi ?? 50m;
             var changePercentage = stock?.ChangePercentage ?? 0m;
 
-            var pnl = position.Status == "OPEN" 
-                ? (currentPrice - position.EntryPrice) * position.Quantity 
+            var pnl = position.Status == "OPEN"
+                ? (currentPrice - position.EntryPrice) * position.Quantity
                 : position.PnL;
-                
-            var pnlPercent = position.EntryPrice > 0 
-                ? (currentPrice - position.EntryPrice) / position.EntryPrice * 100 
+
+            var pnlPercent = position.EntryPrice > 0
+                ? (currentPrice - position.EntryPrice) / position.EntryPrice * 100
                 : 0;
 
             var symbolTransactions = await _context.StockTransactions
                 .Where(t => t.Symbol == position.Symbol && t.Source == "DNSE" && t.TransactionType == "SELL" && t.TimingScore.HasValue)
                 .ToListAsync();
-                
-            decimal? avgTimingScore = symbolTransactions.Any() 
-                ? symbolTransactions.Average(t => t.TimingScore.Value) 
+
+            decimal? avgTimingScore = symbolTransactions.Any()
+                ? symbolTransactions.Average(t => t.TimingScore.Value)
                 : null;
 
             var trend = changePercentage >= 0 ? "Uptrend" : "Sideways";
@@ -1014,7 +1182,7 @@ namespace AITradingSystem.Controllers
                     quantity = suggestSellQty,
                     estimatedValue = estValue,
                     estimatedProfit = estProfit,
-                    description = suggestSellQty > 0 
+                    description = suggestSellQty > 0
                         ? $"Bán bớt {suggestSellQty:N0} CP để hiện thực hóa {estProfit:N0}đ lợi nhuận tạm tính, giảm rủi ro điều chỉnh."
                         : "Không đủ số lượng cổ phiếu tối thiểu để thực hiện bán bớt."
                 },
@@ -1040,53 +1208,54 @@ namespace AITradingSystem.Controllers
         }
     }
 
-    public class StockViewModel
-    {
-        public string Symbol { get; set; } = string.Empty;
-        public string CompanyName { get; set; } = string.Empty;
-        public decimal CurrentPrice { get; set; }
-        public decimal ChangePercentage { get; set; }
-        public decimal Rsi { get; set; }
-        public string AiSignal { get; set; } = string.Empty;
-        public string Exchange { get; set; } = string.Empty;
-    }
 
-    public class PositionAnalysis
-    {
-        public decimal CurrentPnL { get; set; }
-        public decimal PnlPercent { get; set; }
-        public decimal TargetAmount { get; set; }
-        public decimal ProgressPercent { get; set; }
-        public decimal RemainingAmount { get; set; }
-        public decimal AutoTpPrice { get; set; }
-        public decimal FixedBudget { get; set; }
-        public decimal InvestedAmount { get; set; }
-        public decimal RemainingBudget { get; set; }
-        public bool CanBuyMore { get; set; }
-        public decimal SuggestedAddAmount { get; set; }
-        public int SuggestedAddQuantity { get; set; }
-        public bool CanPartialSell { get; set; }
-        public int SuggestedSellQuantity { get; set; }
-        public decimal SuggestedSellAmount { get; set; }
-        public decimal SuggestedSellProfit { get; set; }
-        public string AiSignal { get; set; } = "NONE"; // SELL, WATCH, HOLD, CAUTION, NONE
-        public string AiReason { get; set; } = string.Empty;
-        public int DaysHeld { get; set; }
-        public int? ExpectedHoldDays { get; set; }
-        public int? RemainingDays { get; set; }
-        public List<ActiveLot> ActiveLots { get; set; } = new List<ActiveLot>();
-        public decimal SymbolRealizedPnL { get; set; }
-        public decimal SymbolCumulativePnL { get; set; }
-    }
+public class StockViewModel
+{
+    public string Symbol { get; set; } = string.Empty;
+    public string CompanyName { get; set; } = string.Empty;
+    public decimal CurrentPrice { get; set; }
+    public decimal ChangePercentage { get; set; }
+    public decimal Rsi { get; set; }
+    public string AiSignal { get; set; } = string.Empty;
+    public string Exchange { get; set; } = string.Empty;
+}
 
-    public class ActiveLot
-    {
-        public DateTime Date { get; set; }
-        public int RemainingQuantity { get; set; }
-        public int OriginalQuantity { get; set; }
-        public decimal EntryPrice { get; set; }
-        public decimal CurrentPrice { get; set; }
-        public decimal PnL { get; set; }
-        public decimal PnLPercent { get; set; }
-    }
+public class PositionAnalysis
+{
+    public decimal CurrentPnL { get; set; }
+    public decimal PnlPercent { get; set; }
+    public decimal TargetAmount { get; set; }
+    public decimal ProgressPercent { get; set; }
+    public decimal RemainingAmount { get; set; }
+    public decimal AutoTpPrice { get; set; }
+    public decimal FixedBudget { get; set; }
+    public decimal InvestedAmount { get; set; }
+    public decimal RemainingBudget { get; set; }
+    public bool CanBuyMore { get; set; }
+    public decimal SuggestedAddAmount { get; set; }
+    public int SuggestedAddQuantity { get; set; }
+    public bool CanPartialSell { get; set; }
+    public int SuggestedSellQuantity { get; set; }
+    public decimal SuggestedSellAmount { get; set; }
+    public decimal SuggestedSellProfit { get; set; }
+    public string AiSignal { get; set; } = "NONE"; // SELL, WATCH, HOLD, CAUTION, NONE
+    public string AiReason { get; set; } = string.Empty;
+    public int DaysHeld { get; set; }
+    public int? ExpectedHoldDays { get; set; }
+    public int? RemainingDays { get; set; }
+    public List<ActiveLot> ActiveLots { get; set; } = new List<ActiveLot>();
+    public decimal SymbolRealizedPnL { get; set; }
+    public decimal SymbolCumulativePnL { get; set; }
+}
+
+public class ActiveLot
+{
+    public DateTime Date { get; set; }
+    public int RemainingQuantity { get; set; }
+    public int OriginalQuantity { get; set; }
+    public decimal EntryPrice { get; set; }
+    public decimal CurrentPrice { get; set; }
+    public decimal PnL { get; set; }
+    public decimal PnLPercent { get; set; }
+}
 }

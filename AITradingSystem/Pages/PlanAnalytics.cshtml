@@ -1,0 +1,364 @@
+@page
+@model AITradingSystem.Pages.PlanAnalyticsModel
+@{
+    ViewData["Title"] = "Phân Tích Hiệu Quả AI Plan Generator";
+}
+
+<style>
+    /* Page transition */
+    @@media (prefers-reduced-motion: no-preference) {
+        .page-content {
+            animation: pageIn 0.5s ease-out;
+        }
+    }
+
+    :root {
+        --bg-dark: #090a0f;
+        --card-bg: rgba(20, 22, 37, 0.6);
+        --border-color: rgba(255, 255, 255, 0.08);
+        --text-primary: #f3f4f6;
+        --text-secondary: #9ca3af;
+        --accent-green: #10b981;
+        --accent-red: #ef4444;
+        --accent-purple: #8b5cf6;
+        --accent-blue: #3b82f6;
+        --accent-amber: #f59e0b;
+        --accent-cyan: #06b6d4;
+    }
+
+    body {
+        background-color: var(--bg-dark);
+        color: var(--text-primary);
+    }
+
+    .glass-card {
+        background: var(--card-bg);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border: 1px solid var(--border-color);
+        border-radius: 16px;
+        padding: 24px;
+        margin-bottom: 24px;
+    }
+
+    .gradient-text {
+        background: linear-gradient(135deg, #a78bfa 0%, #3b82f6 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+
+    .metric-card {
+        background: rgba(20, 22, 37, 0.4);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        padding: 20px;
+        text-align: center;
+        transition: all 0.3s ease;
+    }
+
+    .metric-card:hover {
+        border-color: var(--accent-cyan);
+        box-shadow: 0 0 20px rgba(6, 182, 212, 0.1);
+    }
+
+    .metric-value {
+        font-size: 2rem;
+        font-weight: 700;
+        margin: 8px 0;
+    }
+
+    .metric-label {
+        font-size: 0.85rem;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+
+    .progress-bar {
+        width: 100%;
+        height: 8px;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 4px;
+        overflow: hidden;
+        margin-top: 8px;
+    }
+
+    .progress-fill {
+        height: 100%;
+        background: linear-gradient(90deg, var(--accent-cyan), var(--accent-green));
+        border-radius: 4px;
+        transition: width 0.5s ease;
+    }
+
+    .section-title {
+        font-size: 1.3rem;
+        font-weight: 700;
+        margin-bottom: 20px;
+        color: var(--accent-cyan);
+        border-bottom: 2px solid var(--accent-purple);
+        padding-bottom: 12px;
+    }
+
+    .table-container {
+        overflow-x: auto;
+    }
+
+    table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    th {
+        background: rgba(139, 92, 246, 0.1);
+        padding: 12px;
+        text-align: left;
+        font-weight: 600;
+        color: var(--accent-purple);
+        border-bottom: 2px solid var(--border-color);
+    }
+
+    td {
+        padding: 12px;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    tr:hover {
+        background: rgba(139, 92, 246, 0.05);
+    }
+
+    .status-badge {
+        display: inline-block;
+        padding: 6px 12px;
+        border-radius: 20px;
+        font-size: 0.8rem;
+        font-weight: 600;
+    }
+
+    .status-success {
+        background: rgba(16, 185, 129, 0.2);
+        color: var(--accent-green);
+    }
+
+    .status-failed {
+        background: rgba(239, 68, 68, 0.2);
+        color: var(--accent-red);
+    }
+
+    .status-pending {
+        background: rgba(245, 158, 11, 0.2);
+        color: var(--accent-amber);
+    }
+
+    .chart-placeholder {
+        background: rgba(139, 92, 246, 0.05);
+        border: 2px dashed var(--border-color);
+        border-radius: 12px;
+        padding: 40px;
+        text-align: center;
+        color: var(--text-secondary);
+        min-height: 300px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+</style>
+
+<div style="padding: 20px; background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(6, 182, 212, 0.1)); border-radius: 16px; margin-bottom: 30px;">
+    <h1 style="font-size: 2rem; margin-bottom: 8px;">
+        <span style="background: linear-gradient(135deg, var(--accent-purple), var(--accent-cyan)); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+            📊 Phân Tích Hiệu Quả AI Plan Generator
+        </span>
+    </h1>
+    <p style="color: var(--text-secondary); font-size: 1rem;">Theo dõi hiệu suất và độ chính xác của các kế hoạch AI được tạo</p>
+</div>
+
+<!-- Main Metrics -->
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; margin-bottom: 30px;">
+    <!-- Total Plans -->
+    <div class="metric-card">
+        <div class="metric-label">📋 Tổng Kế Hoạch</div>
+        <div class="metric-value" style="color: var(--accent-cyan);">@Model.Analytics.TotalPlansGenerated</div>
+        <div class="progress-bar">
+            <div class="progress-fill" style="width: 100%;"></div>
+        </div>
+    </div>
+
+    <!-- Success Rate -->
+    <div class="metric-card">
+        <div class="metric-label">✅ Tỷ Lệ Thành Công</div>
+        <div class="metric-value" style="color: var(--accent-green);">@(Model.Analytics.SuccessRate.ToString("F1"))%</div>
+        <div class="progress-bar">
+            <div class="progress-fill" style="width: @(Model.Analytics.SuccessRate)%;"></div>
+        </div>
+    </div>
+
+    <!-- Overall Accuracy -->
+    <div class="metric-card">
+        <div class="metric-label">🎯 Độ Chính Xác Trung Bình</div>
+        <div class="metric-value" style="color: var(--accent-amber);">@(Model.Analytics.OverallAccuracy.ToString("F1"))%</div>
+        <div class="progress-bar">
+            <div class="progress-fill" style="width: @(Model.Analytics.OverallAccuracy)%;"></div>
+        </div>
+    </div>
+
+    <!-- Avg Predicted Probability -->
+    <div class="metric-card">
+        <div class="metric-label">📈 Xác Suất Dự Đoán TB</div>
+        <div class="metric-value" style="color: var(--accent-blue);">@(Model.Analytics.AveragePredictedProbability.ToString("F1"))%</div>
+        <div class="progress-bar">
+            <div class="progress-fill" style="width: @(Model.Analytics.AveragePredictedProbability)%;"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Summary Section -->
+<div class="glass-card">
+    <h2 class="section-title">📌 Tóm Tắt Kết Quả</h2>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
+        <div style="background: rgba(16, 185, 129, 0.1); padding: 16px; border-left: 4px solid var(--accent-green); border-radius: 8px;">
+            <div style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 4px;">Kế Hoạch Thành Công</div>
+            <div style="font-size: 1.8rem; font-weight: 700; color: var(--accent-green);">@Model.Analytics.SuccessfulPlans</div>
+        </div>
+
+        <div style="background: rgba(239, 68, 68, 0.1); padding: 16px; border-left: 4px solid var(--accent-red); border-radius: 8px;">
+            <div style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 4px;">Kế Hoạch Thất Bại</div>
+            <div style="font-size: 1.8rem; font-weight: 700; color: var(--accent-red);">@Model.Analytics.FailedPlans</div>
+        </div>
+
+        <div style="background: rgba(59, 130, 246, 0.1); padding: 16px; border-left: 4px solid var(--accent-blue); border-radius: 8px;">
+            <div style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 4px;">Độ Lệch Dự Đoán</div>
+            <div style="font-size: 1.8rem; font-weight: 700; color: var(--accent-blue);">
+                @{
+                    var deviation = Math.Abs(Model.Analytics.AveragePredictedProbability - Model.Analytics.OverallAccuracy);
+                }
+                @(deviation.ToString("F1"))%
+            </div>
+        </div>
+
+        <div style="background: rgba(245, 158, 11, 0.1); padding: 16px; border-left: 4px solid var(--accent-amber); border-radius: 8px;">
+            <div style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 4px;">Kế Hoạch Đang Chạy</div>
+            <div style="font-size: 1.8rem; font-weight: 700; color: var(--accent-amber);">
+                @(Model.Analytics.TotalPlansGenerated - Model.Analytics.SuccessfulPlans - Model.Analytics.FailedPlans)
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Performance Trends -->
+<div class="glass-card">
+    <h2 class="section-title">📈 Xu Hướng Hiệu Suất</h2>
+    <div class="chart-placeholder">
+        <div style="text-align: center;">
+            <div style="font-size: 4rem; margin-bottom: 16px;">📊</div>
+            <p style="font-size: 1.1rem; margin-bottom: 8px;">Biểu đồ xu hướng thành công</p>
+            <p style="font-size: 0.9rem; color: var(--text-secondary);">Tính năng này sẽ được thêm trong tương lai. Hiện tại bạn có thể xem chi tiết từ bảng bên dưới.</p>
+        </div>
+    </div>
+</div>
+
+<!-- Detailed Knowledge Records -->
+<div class="glass-card">
+    <h2 class="section-title">📚 Chi Tiết Kiến Thức AI Đã Học</h2>
+
+    @if (Model.KnowledgeRecords.Any())
+    {
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th style="min-width: 150px;">Ngày Tạo</th>
+                        <th style="min-width: 100px;">Loại</th>
+                        <th style="min-width: 120px;">Kích Hoạt Input</th>
+                        <th style="min-width: 100px;">Quyết Định</th>
+                        <th style="min-width: 100px;">Kết Quả Thực</th>
+                        <th style="min-width: 80px;">Độ Chính Xác</th>
+                        <th style="min-width: 100px;">Trạng Thái Xác Minh</th>
+                        <th style="min-width: 80px;">Thành Công/Thất Bại</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var record in Model.KnowledgeRecords.Take(10))
+                    {
+                        var statusClass = record.VerificationLevel switch
+                        {
+                            "Verified" => "status-success",
+                            "PartiallyVerified" => "status-pending",
+                            _ => "status-failed"
+                        };
+
+                        <tr>
+                            <td>@record.RecordedDate.ToString("dd/MM/yyyy HH:mm")</td>
+                            <td>
+                                <span class="status-badge" style="background: rgba(139, 92, 246, 0.2); color: var(--accent-purple);">
+                                    @record.KnowledgeType
+                                </span>
+                            </td>
+                            <td style="font-size: 0.85rem; color: var(--text-secondary);">
+                                @{
+                                    try
+                                    {
+                                        var features = System.Text.Json.JsonDocument.Parse(record.InputFeatures ?? "{}");
+                                        var root = features.RootElement;
+                                        var capital = root.TryGetProperty("capital", out var c) ? c.GetDecimal() : 0;
+                                        <text>@(capital.ToString("N0")) đ</text>
+                                    }
+                                    catch
+                                    {
+                                        <text>-</text>
+                                    }
+                                }
+                            </td>
+                            <td style="font-size: 0.85rem;">@(record.Decision?.Length > 30 ? record.Decision.Substring(0, 30) + "..." : record.Decision)</td>
+                            <td style="font-size: 0.85rem;">@(record.ActualOutcome ?? "Đang chờ...")</td>
+                            <td>
+                                <span style="font-weight: 600; color: @(record.AccuracyScore >= 80 ? "var(--accent-green)" : record.AccuracyScore >= 50 ? "var(--accent-amber)" : "var(--accent-red)");">
+                                    @(record.AccuracyScore.ToString("F0"))%
+                                </span>
+                            </td>
+                            <td>
+                                <span class="status-badge @statusClass">
+                                    @record.VerificationLevel
+                                </span>
+                            </td>
+                            <td style="text-align: center;">
+                                <span style="font-size: 1.2rem;">
+                                    @if (record.VerificationLevel == "Verified")
+                                    {
+                                        <text>✅</text>
+                                    }
+                                    else if (record.VerificationLevel == "PartiallyVerified")
+                                    {
+                                        <text>⏸️</text>
+                                    }
+                                    else
+                                    {
+                                        <text>❌</text>
+                                    }
+                                </span>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <p style="text-align: center; color: var(--text-secondary); margin-top: 16px; font-size: 0.9rem;">
+            Hiển thị 10 bản ghi gần đây nhất. Tổng cộng: @Model.KnowledgeRecords.Count bản ghi
+        </p>
+    }
+    else
+    {
+        <div style="text-align: center; padding: 40px; color: var(--text-secondary);">
+            <p style="font-size: 1.1rem;">Chưa có kiến thức nào được ghi lại</p>
+            <p style="font-size: 0.9rem;">Hãy tạo và hoàn thành một kế hoạch AI để bắt đầu học tập</p>
+        </div>
+    }
+</div>
+
+<!-- Navigation -->
+<div class="glass-card" style="text-align: center;">
+    <a href="/AiPlanGenerator" style="display: inline-block; padding: 12px 24px; background: var(--accent-purple); color: white; border-radius: 8px; text-decoration: none; font-weight: 600; transition: all 0.3s ease;">
+        ← Quay lại AI Plan Generator
+    </a>
+</div>

@@ -1,0 +1,338 @@
+@using AITradingSystem.Models
+@{
+    var globalPlan = ViewBag.GlobalPlan as AITradingSystem.Services.GlobalPortfolioPlanResult;
+    var pref = ViewBag.Preference as UserPreference ?? new UserPreference();
+}
+
+@if (ViewBag.PlanStatus == "Pending")
+{
+    <div class="glass-card mb-4 text-center py-5" style="border: 1px dashed rgba(139, 92, 246, 0.4); background: rgba(139, 92, 246, 0.02);">
+        <div class="spinner-border text-primary mb-3" style="color: var(--accent-purple) !important;" role="status"></div>
+        <h5 class="fw-bold text-white">AI đang phân tích và lập kế hoạch tối ưu danh mục...</h5>
+        <p class="text-secondary small mb-0">Hệ thống đang chạy tác vụ tối ưu hóa xác suất đạt mục tiêu cuối kỳ (khoảng 15-30 giây). Trang sẽ tự động tải lại khi hoàn thành.</p>
+    </div>
+}
+else if (globalPlan != null)
+{
+    <div class="glass-card mb-4" style="background: rgba(139, 92, 246, 0.03); border: 1px solid rgba(139, 92, 246, 0.15); padding: 24px;">
+        <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+            <div class="d-flex align-items-center gap-2">
+                <span style="font-size: 1.5rem;">🧠</span>
+                <div>
+                    <h4 class="m-0 text-white fw-bold" style="font-size: 1.1rem;">AI Hoạch Định & Tối Ưu Danh Mục Tổng Thể</h4>
+                    <span class="text-secondary" style="font-size: 0.78rem;">
+                        Định hướng giao dịch từ ngày <strong class="text-white">@globalPlan.StartDate.ToString("dd/MM/yyyy")</strong> đến ngày <strong class="text-white">@globalPlan.EndDate.ToString("dd/MM/yyyy")</strong> (còn <strong class="text-danger">@globalPlan.RemainingDays ngày</strong>)
+                    </span>
+                </div>
+            </div>
+            <div class="text-end">
+                <div style="font-size: 0.75rem; color: var(--accent-purple); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;">Xác suất đạt mục tiêu cuối kỳ</div>
+                <div class="d-flex align-items-center gap-2 mt-1 justify-content-end">
+                    <span class="fw-bold" style="font-size: 1.3rem; color: @(globalPlan.SuccessProbability >= 80 ? "var(--accent-green)" : globalPlan.SuccessProbability >= 50 ? "var(--accent-amber)" : "var(--accent-red)");">
+                        @globalPlan.SuccessProbability.ToString("N1")%
+                    </span>
+                    <div class="progress-container" style="width: 80px; height: 8px; margin: 0;">
+                        <div class="progress-bar-fill @(globalPlan.SuccessProbability >= 80 ? "complete" : globalPlan.SuccessProbability >= 50 ? "positive" : "negative")" style="width: @globalPlan.SuccessProbability%"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row g-3">
+            <!-- Plan Summary -->
+            <div class="col-12">
+                <div class="p-3 rounded" style="background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.05);">
+                    <div class="fw-bold text-white mb-1" style="font-size: 0.85rem; color: var(--accent-cyan) !important;">📌 Tóm tắt kế hoạch hành động:</div>
+                    <p class="m-0 text-secondary" style="font-size: 0.85rem; line-height: 1.5;">@globalPlan.PlanSummary</p>
+                </div>
+            </div>
+
+            <!-- Actions Table -->
+            <div class="col-md-7">
+                <div class="p-3 rounded h-100" style="background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.05);">
+                    <div class="fw-bold text-white mb-2" style="font-size: 0.85rem; color: var(--accent-purple) !important;">🔄 Đề xuất điều chuyển vốn & Giao dịch:</div>
+                    @if (globalPlan.Actions != null && globalPlan.Actions.Any())
+                    {
+                        <div class="table-responsive">
+                            <table class="table table-sm table-dark table-hover m-0" style="font-size: 0.72rem; border-color: rgba(255,255,255,0.03); --bs-table-bg: #000000; background-color: #000000 !important;">
+                                <thead>
+                                    <tr class="text-secondary" style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                        <th>Mã CP</th>
+                                        <th>Hành động</th>
+                                        <th>Chi tiết điều chuyển vốn</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var act in globalPlan.Actions)
+                                    {
+                                        var actClass = act.Action switch
+                                        {
+                                            "MUA" => "pnl-positive",
+                                            "MUA THÊM" => "pnl-positive",
+                                            "BÁN" => "pnl-negative",
+                                            "CHUYỂN VỐN" => "text-info",
+                                            _ => "text-secondary"
+                                        };
+                                        <tr>
+                                            <td class="fw-bold text-white">@act.Ticker</td>
+                                            <td><span class="badge" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); font-size: 0.72rem; color: inherit; padding: 3px 6px; display: inline-block;">@act.Action</span></td>
+                                            <td class="text-secondary">@act.Description</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                    else
+                    {
+                        <span class="text-secondary small">Chưa có đề xuất giao dịch nào.</span>
+                    }
+                </div>
+            </div>
+
+            <!-- Contributions -->
+            <div class="col-md-5">
+                <div class="p-3 rounded h-100" style="background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.05);">
+                    <div class="fw-bold text-white mb-2" style="font-size: 0.85rem; color: var(--accent-amber) !important;">💰 Dự báo đóng góp lợi nhuận mục tiêu:</div>
+                    @if (globalPlan.ExpectedContributions != null && globalPlan.ExpectedContributions.Any())
+                    {
+                        <div class="d-flex flex-column gap-2">
+                            @foreach (var contrib in globalPlan.ExpectedContributions)
+                            {
+                                <div class="p-2 rounded" style="background: rgba(255, 255, 255, 0.015); border: 1px solid rgba(255, 255, 255, 0.03);">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <span class="fw-bold text-white" style="font-size: 0.82rem;">@contrib.Ticker</span>
+                                        <span class="pnl-positive fw-bold" style="font-size: 0.82rem;">+@contrib.ExpectedProfit.ToString("N0") đ</span>
+                                    </div>
+                                    <div class="text-secondary mt-1" style="font-size: 0.74rem;">@contrib.Description</div>
+                                </div>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <span class="text-secondary small">Chưa có phân tích đóng góp.</span>
+                    }
+                </div>
+            </div>
+
+            <!-- Rationale -->
+            <div class="col-12">
+                <div class="p-3 rounded" style="background: rgba(139, 92, 246, 0.015); border: 1px solid rgba(139, 92, 246, 0.05);">
+                    <div class="fw-bold text-white mb-1" style="font-size: 0.85rem; color: var(--accent-green) !important;">📊 Phân tích cơ sở & Quản trị rủi ro lý thuyết:</div>
+                    <p class="m-0 text-secondary" style="font-size: 0.82rem; line-height: 1.5; font-style: italic;">@globalPlan.Rationale</p>
+                </div>
+            </div>
+
+            <!-- Daily Action Calendar - Enhanced Table View -->
+            <div class="col-12 mt-3">
+                <div class="p-0 rounded overflow-hidden" style="border: 1px solid rgba(139, 92, 246, 0.2); background: rgba(139, 92, 246, 0.01);">
+                    <!-- Calendar Header -->
+                    <div class="p-3" style="background: linear-gradient(135deg, rgba(139, 92, 246, 0.15) 0%, rgba(6, 182, 212, 0.1) 100%); border-bottom: 1px solid rgba(139, 92, 246, 0.2);">
+                        <div class="fw-bold text-white" style="font-size: 0.95rem; color: var(--accent-cyan) !important;">📅 Lịch trình giao dịch tối ưu từng ngày (Daily Action Calendar)</div>
+                        <div class="text-secondary small mt-1" style="font-size: 0.8rem;">Chi tiết hành động giao dịch, mục tiêu và tiến độ lũy kế theo từng ngày</div>
+                    </div>
+
+                    @if (globalPlan.DailyCalendar != null && globalPlan.DailyCalendar.Any())
+                    {
+                        
+                            <div class="table-responsive">
+                                <table class="table table-sm table-dark table-hover daily-calendar-table m-0" style="font-size: 0.65rem; border-color: rgba(255,255,255,0.03); --bs-table-bg: #000000; background-color: #000000 !important;">
+                                    <thead>
+                                        <tr style="background: linear-gradient(90deg, rgba(139, 92, 246, 0.15) 0%, rgba(59, 130, 246, 0.1) 100%); border-bottom: 2px solid rgba(139, 92, 246, 0.3);">
+                                            <th style="width: 12%; padding: 12px 8px; color: var(--accent-cyan); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; border-radius: 8px 0 0 0;">Ngày</th>
+                                            <th style="width: 10%; padding: 12px 8px; color: var(--accent-cyan); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em;">Thứ</th>
+                                            <th style="width: 32%; padding: 12px 8px; color: var(--accent-cyan); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em;">Hành động đề xuất</th>
+                                            <th style="width: 15%; padding: 12px 8px; color: var(--accent-cyan); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em;">Mục tiêu giao dịch</th>
+                                            <th style="width: 11%; padding: 12px 8px; color: var(--accent-cyan); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em;">PnL Tích lũy</th>
+                                            <th style="width: 20%; padding: 12px 8px; color: var(--accent-cyan); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; border-radius: 0 8px 0 0;">Hành động thực tế</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @{
+                                            int rowIndex = 0;
+                                            var sortedCalendar = globalPlan.DailyCalendar
+                                                .OrderBy(x => {
+                                                    if (DateTime.TryParseExact(x.Date, "dd/MM/yyyy", null, System.Globalization.DateTimeStyles.None, out var d)) return d;
+                                                    return DateTime.MinValue;
+                                                })
+                                                .ToList();
+                                        }
+                                        @foreach (var item in sortedCalendar)
+                                        {
+                                            rowIndex++;
+                                            var isToday = false;
+                                            var isTomorrow = false;
+                                            if (DateTime.TryParseExact(item.Date, "dd/MM/yyyy", null, System.Globalization.DateTimeStyles.None, out var dateVal))
+                                            {
+                                                isToday = dateVal.Date == DateTime.Today;
+                                                isTomorrow = dateVal.Date == DateTime.Today.AddDays(1);
+                                            }
+
+                                            var badgeClass = item.ActionType switch
+                                            {
+                                                "MUA" => "bg-success",
+                                                "MUA THÊM" => "bg-success",
+                                                "BÁN" => "bg-danger",
+                                                "CƠ CẤU" => "bg-warning text-dark",
+                                                "TẤT TOÁN" => "bg-primary",
+                                                "GIỮ" => "bg-secondary",
+                                                "SÀN ĐÓNG CỬA" => "bg-muted text-secondary",
+                                                _ => "bg-secondary"
+                                            };
+                                            var rowBg = rowIndex % 2 == 0 ? "#000000" : "#080808";
+                                            if (isToday) {
+                                                rowBg = "rgba(239, 68, 68, 0.15)";
+                                            }
+                                            var isPositivePnL = item.CumulativePnL.Contains("+");
+
+                                            <tr style="background: @rowBg; border-bottom: 1px solid rgba(139, 92, 246, 0.15); transition: all 0.2s ease;">
+                                                <td style="padding: 12px 8px; font-weight: bold;">
+                                                    @item.Date
+                                                    @if (isToday)
+                                                    {
+                                                        <span class="badge bg-danger d-block mt-1" style="font-size: 0.65rem; animation: pulse 2s infinite;">HÔM NAY</span>
+                                                    }
+                                                    else if (isTomorrow)
+                                                    {
+                                                        <span class="badge bg-warning text-dark d-block mt-1" style="font-size: 0.65rem;">NGÀY MAI</span>
+                                                    }
+                                                </td>
+                                                <td style="padding: 12px 8px; color: var(--text-secondary);">
+                                                    @item.DayOfWeek
+                                                </td>
+                                                <td style="padding: 12px 8px;">
+                                                    <div style="display: flex; gap: 8px; align-items: flex-start;">
+                                                        <span class="badge @badgeClass fw-bold me-2" style="font-size: 0.7rem; padding: 4px 8px; white-space: nowrap;">@item.ActionType</span>
+                                                        <span style="flex: 1; line-height: 1.4;">@Html.Raw(System.Text.RegularExpressions.Regex.Replace(item.Description, @"\*\*(.*?)\*\*", "<strong style=\"color: var(--accent-purple);\">$1</strong>"))</span>
+                                                    </div>
+                                                </td>
+                                                <td style="padding: 12px 8px; font-weight: 600; color: @(item.Target.Contains("+") ? "var(--accent-green)" : "var(--text-secondary)");">
+                                                    @item.Target
+                                                </td>
+                                                <td style="padding: 12px 8px; font-weight: bold; color: @(isPositivePnL ? "var(--accent-green)" : "var(--accent-red)"); font-size: 0.72rem;">
+                                                    @item.CumulativePnL
+                                                </td>
+                                                <td style="padding: 12px 8px; color: var(--text-secondary); font-size: 0.68rem; line-height: 1.5;">
+                                                    @Html.Raw(item.ActualAction)
+                                                </td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                    }
+                    else
+                    {
+                        <div class="p-4 text-center" style="background: rgba(255,255,255,0.01);">
+                            <div style="font-size: 2rem; margin-bottom: 10px;">📭</div>
+                            <span class="text-secondary">Chưa có lịch trình giao dịch. Vui lòng chạy phân tích AI để tạo lịch trình.</span>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+else
+{
+    <div class="glass-card mb-4 text-center py-5" style="border: 1px dashed rgba(255, 255, 255, 0.1); background: rgba(255,255,255,0.01);">
+        <div style="font-size: 2.5rem; margin-bottom: 12px;">🧠</div>
+        <h5 class="fw-bold text-white">Chưa có kế hoạch đầu tư AI tổng thể</h5>
+        <p class="text-secondary small mb-3">Vui lòng bấm nút "AI Phân tích và dự đoán kế hoạch" ở góc trên bên phải để bắt đầu thiết lập kế hoạch tối ưu hóa danh mục.</p>
+        <form asp-action="RunPlanAnalysis" method="post" class="d-inline-block">
+            <button type="submit" onclick="showGlobalLoading()" class="btn text-white fw-bold d-flex align-items-center gap-2" style="background: linear-gradient(135deg, #8b5cf6 0%, #3b82f6 100%); border-radius: 8px; padding: 8px 16px; border: none; cursor: pointer;">
+                🧠 Khởi chạy phân tích AI
+            </button>
+        </form>
+    </div>
+}
+
+@if (ViewBag.HistoryPlans != null)
+{
+    var historyPlans = ViewBag.HistoryPlans as List<InvestmentPlan>;
+    if (historyPlans != null && historyPlans.Any())
+    {
+        <div class="glass-card mt-4 p-4" style="background: rgba(255, 255, 255, 0.015); border: 1px solid rgba(255, 255, 255, 0.05);">
+            <h4 class="fw-bold text-white mb-3" style="font-size: 1.1rem;"><span class="gradient-text">Lịch sử kế hoạch đầu tư đã chạy (Audit Trail)</span></h4>
+            <div class="table-responsive" style="max-height: 220px; overflow-y: auto;">
+                <table class="table table-dark table-hover m-0 align-middle" style="font-size: 0.82rem; border-color: rgba(255,255,255,0.05); position: relative;">
+                    <thead style="position: sticky; top: 0; background: #131422; z-index: 10; border-bottom: 1px solid rgba(255,255,255,0.08);">
+                        <tr class="text-secondary">
+                            <th>Ngày chạy</th>
+                            <th>Thời hạn chu kỳ</th>
+                            <th class="text-end">Vốn đầu tư</th>
+                            <th class="text-end">Mục tiêu lãi</th>
+                            <th class="text-end">Lũy kế lúc chạy</th>
+                            <th class="text-end">Còn thiếu</th>
+                            <th>Còn lại</th>
+                            <th class="text-center">Xác suất AI</th>
+                            <th class="text-center">Trạng thái</th>
+                            <th class="text-end">KQ thực tế</th>
+                            <th class="text-center">Hành động</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var plan in historyPlans)
+                        {
+                            var statusBadgeClass = plan.Status switch
+                            {
+                                "Pending" => "bg-secondary text-white-50",
+                                "Active" => "bg-primary text-white",
+                                "Success" => "bg-success text-white",
+                                "Failed" => "bg-danger text-white",
+                                "Expired" => "bg-warning text-dark",
+                                "CompletedEarly" => "bg-info text-dark",
+                                _ => "bg-dark text-secondary"
+                            };
+                            var statusLabel = plan.Status switch
+                            {
+                                "Pending" => "Chờ xử lý",
+                                "Active" => "Đang chạy",
+                                "Success" => "Thành công",
+                                "Failed" => "Thất bại",
+                                "Expired" => "Hết hạn",
+                                "CompletedEarly" => "Hoàn thành sớm",
+                                _ => plan.Status
+                            };
+                            <tr>
+                                <td class="text-secondary">@plan.RunDate.ToString("dd/MM/yyyy HH:mm")</td>
+                                <td>@plan.StartDate.ToString("dd/MM/yyyy") - @plan.EndDate.ToString("dd/MM/yyyy")</td>
+                                <td class="text-end font-monospace">@plan.Capital.ToString("N0") đ</td>
+                                <td class="text-end font-monospace text-warning">@plan.TargetProfit.ToString("N0") đ</td>
+                                <td class="text-end font-monospace @(plan.ActualProfit >= 0 ? "pnl-positive" : "pnl-negative")">
+                                    @(plan.ActualProfit >= 0 ? "+" : "")@plan.ActualProfit.ToString("N0") đ
+                                </td>
+                                <td class="text-end font-monospace text-secondary">@plan.RemainingProfitNeeded.ToString("N0") đ</td>
+                                <td>@plan.DaysRemainingAtRun ngày</td>
+                                <td class="text-center fw-bold" style="color: @(plan.SuccessProbability >= 80 ? "var(--accent-green)" : plan.SuccessProbability >= 50 ? "var(--accent-amber)" : "var(--accent-red)");">
+                                    @plan.SuccessProbability.ToString("N1")%
+                                </td>
+                                <td class="text-center">
+                                    <span class="badge @statusBadgeClass px-2 py-1" style="font-size: 0.7rem; border-radius: 4px;">@statusLabel</span>
+                                </td>
+                                <td class="text-end font-monospace">
+                                    @if (plan.FinalProfit.HasValue)
+                                    {
+                                        <span class="@(plan.FinalProfit.Value >= 0 ? "pnl-positive" : "pnl-negative") fw-bold">
+                                            @(plan.FinalProfit.Value >= 0 ? "+" : "")@plan.FinalProfit.Value.ToString("N0") đ
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">-</span>
+                                    }
+                                </td>
+                                <td class="text-center">
+                                    <button type="button" onclick="showHistoricalPlanDetails(@plan.Id)" class="btn-save-target" style="padding: 4px 10px; font-size: 0.72rem;">
+                                        🔍 Chi tiết
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+}

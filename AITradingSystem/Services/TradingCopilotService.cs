@@ -323,7 +323,7 @@ Vui lòng trả về kết quả dưới định dạng JSON như sau:
             int remainingDays = (endDate.Date - DateTime.Today.Date).Days;
             if (remainingDays < 0) remainingDays = 0;
             
-            decimal targetAmountToUse = totalTargetAmount > 0 ? totalTargetAmount : pref.TargetAmount;
+            decimal targetAmountToUse = pref.TargetAmount;
             decimal remainingAmountTotal = Math.Max(0m, targetAmountToUse - cumulativePnL);
 
             // Bối cảnh vị thế đang mở
@@ -424,7 +424,7 @@ Vui lòng trả về kết quả dưới định dạng JSON khớp chính xác 
 
         private string SimulatePlanReasoning(List<TradePosition> positions, UserPreference pref, List<StockViewModel> stocks, decimal cumulativePnL, int totalDays, DateTime startDate, DateTime endDate, int remainingDays, decimal remainingAmountTotal, decimal totalTargetAmount)
         {
-            decimal targetAmountToUse = totalTargetAmount > 0 ? totalTargetAmount : pref.TargetAmount;
+            decimal targetAmountToUse = pref.TargetAmount;
             // Tính xác suất thành công
             decimal successProbability = 50;
             decimal targetProgress = 0;
@@ -500,26 +500,59 @@ Vui lòng trả về kết quả dưới định dạng JSON khớp chính xác 
                 actions.Add(new PlanAction { Ticker = "DANH MỤC", Action = "MUA", Description = "Không có vị thế mở nào. Đề xuất giải ngân 20-30% vốn vào các mã tiềm năng khi thị trường điều chỉnh." });
             }
 
-            // Tạo lịch giao dịch tối ưu
+            // Tạo lịch giao dịch tối ưu cho tất cả các ngày từ startDate đến endDate
             var calendarDays = new List<DateTime>();
-            calendarDays.Add(DateTime.Today);
-            for (int i = 1; i <= 6; i++)
+            var currentDay = startDate.Date;
+            var maxDate = endDate.Date;
+            while (currentDay <= maxDate)
             {
-                calendarDays.Add(DateTime.Today.AddDays(i));
+                calendarDays.Add(currentDay);
+                currentDay = currentDay.AddDays(1);
             }
-            if (totalDays > 10)
+            
+            // AI tự động đánh giá và chọn lọc các mã tiềm năng dựa trên tín hiệu AI (AiSignal), chỉ số RSI và xu hướng giá
+            var evaluatedCandidates = stocks
+                .Where(s => s.Rsi >= 30 && s.Rsi <= 70)
+                .OrderByDescending(s => s.AiSignal == "BUY" ? 2 : (s.AiSignal == "HOLD" ? 1 : 0))
+                .ThenByDescending(s => s.ChangePercentage)
+                .Select(s => s.Symbol)
+                .ToList();
+
+            // Dự phòng nếu không tìm thấy mã nào tối ưu
+            if (!evaluatedCandidates.Any())
             {
-                var midDate = DateTime.Today.AddDays(totalDays / 2);
-                if (!calendarDays.Any(d => d.Date == midDate.Date)) calendarDays.Add(midDate.Date);
+                evaluatedCandidates = stocks.Select(s => s.Symbol).ToList();
             }
-            var lastDate = DateTime.Today.AddDays(totalDays);
-            if (!calendarDays.Any(d => d.Date == lastDate.Date)) calendarDays.Add(lastDate.Date);
-            
-            calendarDays = calendarDays.OrderBy(d => d).ToList();
-            
+            if (!evaluatedCandidates.Any())
+            {
+                evaluatedCandidates = new List<string> { "HPG", "SSI", "MWG", "FPT", "VIC", "VNM" };
+            }
+
+            // Đưa các mã người dùng đang nắm giữ lên đầu danh sách để ưu tiên cơ cấu/giao dịch
+            var candidateStocks = new List<string>();
+            foreach (var pos in positions)
+            {
+                if (!candidateStocks.Contains(pos.Symbol))
+                {
+                    candidateStocks.Add(pos.Symbol);
+                }
+            }
+            foreach (var sym in evaluatedCandidates)
+            {
+                if (!candidateStocks.Contains(sym))
+                {
+                    candidateStocks.Add(sym);
+                }
+            }
+
+            int totalBusinessDays = calendarDays.Count(d => d.DayOfWeek != DayOfWeek.Saturday && d.DayOfWeek != DayOfWeek.Sunday);
+            int sellCyclesCount = Math.Max(1, totalBusinessDays / 4); // Cứ mỗi 4 ngày giao dịch có 1 nhịp chốt lời xoay vòng
+            decimal profitPerCycle = Math.Round(targetAmountToUse / sellCyclesCount / 1000m) * 1000m;
+            decimal currentProjectedPnL = cumulativePnL;
+            int businessDayIndex = 0;
+
             foreach (var date in calendarDays)
             {
-                int dayOffset = (date.Date - DateTime.Today.Date).Days;
                 string actionType = "GIỮ";
                 string description = "";
                 string target = "-";
@@ -527,81 +560,88 @@ Vui lòng trả về kết quả dưới định dạng JSON khớp chính xác 
                 if (date.DayOfWeek == DayOfWeek.Saturday || date.DayOfWeek == DayOfWeek.Sunday)
                 {
                     actionType = "SÀN ĐÓNG CỬA";
-                    description = "Thị trường nghỉ giao dịch cuối tuần. Hãy nghiên cứu tin tức vĩ mô và kết quả kinh doanh quý mới.";
-                }
-                else if (dayOffset == 0)
-                {
-                    var urgentSells = positions.Where(p => {
-                        var price = stocks.FirstOrDefault(s => s.Symbol == p.Symbol)?.CurrentPrice ?? p.EntryPrice;
-                        var tp = p.TakeProfitPrice ?? (p.EntryPrice * 1.15m);
-                        var sl = p.StopLossPrice ?? (p.EntryPrice * 0.93m);
-                        return price >= tp || price <= sl;
-                    }).ToList();
-                    
-                    if (urgentSells.Any())
-                    {
-                        actionType = "BÁN";
-                        var tickers = string.Join(", ", urgentSells.Select(p => p.Symbol));
-                        description = $"Thực hiện bán chủ động các mã đã đạt mốc kỳ vọng hoặc chạm ngưỡng cắt lỗ: **{tickers}**.";
-                        target = "Tối ưu danh mục";
-                    }
-                    else if (positions.Any())
-                    {
-                        actionType = "GIỮ";
-                        description = "Thị trường ổn định. Không có mã nào chạm ngưỡng cảnh báo hôm nay. Tiếp tục nắm giữ danh mục.";
-                        target = "Theo dõi";
-                    }
-                    else
-                    {
-                        actionType = "MUA";
-                        description = "Cơ hội giải ngân: Tích lũy cổ phiếu HPG hoặc SSI ở vùng hỗ trợ hỗ trợ kỹ thuật mạnh.";
-                        target = "HPG / SSI";
-                    }
-                }
-                else if (dayOffset == 1)
-                {
-                    actionType = "THEO DÕI";
-                    description = "Kiểm tra dòng tiền khối ngoại và tự doanh đầu phiên. Theo dõi sát nhóm cổ phiếu ngân hàng và bất động sản.";
-                }
-                else if (dayOffset == 2)
-                {
-                    actionType = "CƠ CẤU";
-                    if (positions.Any())
-                    {
-                        var firstSym = positions.First().Symbol;
-                        description = $"Theo dõi sát **{firstSym}**. Cân nhắc cơ cấu giảm tỷ trọng 20-30% nếu kiểm định đỉnh cũ không thành công.";
-                        target = "Quản trị rủi ro";
-                    }
-                    else
-                    {
-                        description = "Nghiên cứu cơ cấu phân bổ vốn 40% vào nhóm ngành có kết quả kinh doanh quý tăng trưởng tốt.";
-                    }
-                }
-                else if (dayOffset == 3)
-                {
-                    actionType = "MUA THÊM";
-                    if (positions.Any(p => p.PnL < 0))
-                    {
-                        var lossSym = positions.First(p => p.PnL < 0).Symbol;
-                        description = $"Đề xuất mua gom thêm tối đa 10% khối lượng đối với **{lossSym}** tại vùng hỗ trợ kỹ thuật mạnh.";
-                        target = "Mua gia tăng";
-                    }
-                    else
-                    {
-                        description = "Nếu thị trường có rung lắc mạnh, giải ngân thêm 10% vốn vào cổ phiếu SSI để đón đầu sóng phục hồi.";
-                        target = "SSI";
-                    }
-                }
-                else if (dayOffset == totalDays)
-                {
-                    actionType = "TẤT TOÁN";
-                    description = "Đáo hạn kế hoạch giao dịch chứng khoán. Tất toán tất cả các vị thế mở, tính toán kết quả PnL cuối kỳ và chuyển vốn về tài khoản gốc.";
-                    target = $"{targetAmountToUse:N0} đ";
+                    description = "Thị trường nghỉ giao dịch cuối tuần. Hãy nghiên cứu tin tức vĩ mô và phân tích các mã tiềm năng cho tuần mới.";
                 }
                 else
                 {
-                    actionType = "GIỮ";
-                    description = "Danh mục đang diễn biến ổn định theo đúng lộ trình của kế hoạch. Tiếp tục giữ lệnh.";
+                    businessDayIndex++;
+                    int cycleStep = (businessDayIndex - 1) % 4; // 0 = MUA, 1 = THEO DÕI/MUA GIA TĂNG, 2 = GỒNG LÃI/QUẢN TRỊ, 3 = BÁN CHỐT LỜI XOAY VÒNG
+                    int stockIndex = ((businessDayIndex - 1) / 4) % candidateStocks.Count;
+                    string symbol = candidateStocks[stockIndex];
+                    
+                    var stockInfo = stocks.FirstOrDefault(s => s.Symbol == symbol);
+                    decimal currentPrice = stockInfo?.CurrentPrice ?? 30000m;
+                    if (currentPrice <= 0) currentPrice = 30000m;
+
+                    // Kiểm tra xem người dùng có vị thế nắm giữ thực tế cho mã này hay không
+                    var existingPos = positions.FirstOrDefault(p => p.Symbol == symbol);
+                    int qty = 0;
+                    if (existingPos != null)
+                    {
+                        qty = existingPos.Quantity;
+                    }
+                    else
+                    {
+                        qty = (int)(pref.AmountPerTrade / currentPrice / 100) * 100;
+                        if (qty == 0) qty = 100;
+                    }
+
+                    // Khối lượng mua thêm (dựa trên vốn cài đặt mỗi lệnh)
+                    int buyMoreQty = (int)(pref.AmountPerTrade / currentPrice / 100) * 100;
+                    if (buyMoreQty == 0) buyMoreQty = 100;
+
+                    int totalQtyHeld = existingPos != null ? (qty + buyMoreQty) : (qty + buyMoreQty);
+
+                    if (cycleStep == 0)
+                    {
+                        if (existingPos != null)
+                        {
+                            actionType = "GIỮ";
+                            description = $"Nắm giữ vị thế thực tế hiện tại của **{symbol}** (Khối lượng đang có: **{qty:N0} CP**, giá vốn trung bình: **{existingPos.EntryPrice:N0} đ**). Tiếp tục gồng lãi hướng tới kháng cự.";
+                            target = $"Giữ {qty:N0} CP {symbol}";
+                        }
+                        else
+                        {
+                            var buyMin = Math.Round(currentPrice * 0.985m / 100m) * 100m;
+                            var buyMax = Math.Round(currentPrice * 1.005m / 100m) * 100m;
+                            actionType = "MUA";
+                            description = $"Giải ngân mua mới **{symbol}**. Đề xuất số lượng đặt lệnh: **{qty:N0} CP**, giá mua tích lũy vùng: **{buyMin:N0} - {buyMax:N0} đ** (khuyến nghị rải lệnh nhịp rung lắc).";
+                            target = $"Mua {qty:N0} CP {symbol} giá {buyMax:N0} đ";
+                        }
+                    }
+                    else if (cycleStep == 1)
+                    {
+                        var addPriceMin = Math.Round(currentPrice * 0.98m / 100m) * 100m;
+                        var addPriceMax = Math.Round(currentPrice * 0.995m / 100m) * 100m;
+                        actionType = "MUA THÊM";
+                        description = $"Gia tăng tỷ trọng **{symbol}**. Đề xuất mua thêm: **{buyMoreQty:N0} CP**, giá gom vùng: **{addPriceMin:N0} - {addPriceMax:N0} đ** khi kiểm thử thành công hỗ trợ kỹ thuật.";
+                        target = $"Mua thêm {buyMoreQty:N0} CP {symbol} giá {addPriceMax:N0} đ";
+                    }
+                    else if (cycleStep == 2)
+                    {
+                        var stopLossPrice = Math.Round(currentPrice * (1 - (pref.MaxLossPercentage > 0 ? pref.MaxLossPercentage / 100m : 0.07m)) / 100m) * 100m;
+                        actionType = "GIỮ";
+                        description = $"Tiếp tục nắm giữ **{symbol}** (Tổng khối lượng sau gia tăng: **{totalQtyHeld:N0} CP**). Đặt mốc cắt lỗ (Stop-loss) tại giá **{stopLossPrice:N0} đ** để bảo vệ vị thế.";
+                        target = $"Giữ {totalQtyHeld:N0} CP {symbol} (SL: {stopLossPrice:N0} đ)";
+                    }
+                    else // cycleStep == 3
+                    {
+                        var sellMin = Math.Round(currentPrice * 1.035m / 100m) * 100m;
+                        var sellMax = Math.Round(currentPrice * 1.05m / 100m) * 100m;
+                        actionType = "BÁN";
+                        currentProjectedPnL += profitPerCycle;
+                        description = $"Bán chốt lời xoay vòng toàn bộ vị thế **{symbol}** (**{totalQtyHeld:N0} CP**). Giá bán chốt lời đề xuất vùng: **{sellMin:N0} - {sellMax:N0} đ**, chốt lời ngắn hạn: **+{profitPerCycle:N0} đ**.";
+                        target = $"Bán {totalQtyHeld:N0} CP {symbol} giá {sellMin:N0} đ";
+                    }
+                }
+
+                // Nếu là ngày làm việc cuối cùng của chu kỳ kế hoạch, tiến hành tất toán tổng
+                bool isLastBusinessDay = (date.Date == endDate.Date) || (date.Date.AddDays(1) > endDate.Date && date.DayOfWeek == DayOfWeek.Friday);
+                if (isLastBusinessDay && date.DayOfWeek != DayOfWeek.Saturday && date.DayOfWeek != DayOfWeek.Sunday)
+                {
+                    actionType = "TẤT TOÁN";
+                    description = "Đáo hạn kế hoạch giao dịch chứng khoán. Tất toán toàn bộ các vị thế mở còn lại, thu hồi tiền mặt và chốt tổng kết quả kế hoạch để đạt mục tiêu.";
+                    target = "Tất toán toàn bộ danh mục";
                 }
 
                 dailyCalendar.Add(new AITradingSystem.Models.DailyCalendarItem
@@ -611,14 +651,14 @@ Vui lòng trả về kết quả dưới định dạng JSON khớp chính xác 
                     ActionType = actionType,
                     Description = description,
                     Target = target,
-                    CumulativePnL = $"{cumulativePnL:N0} đ",
+                    CumulativePnL = $"{currentProjectedPnL:N0} đ",
                     ActualAction = "-"
                 });
             }
 
             var planResult = new GlobalPortfolioPlanResult
             {
-                SuccessProbability = (int)successProbability,
+                SuccessProbability = Math.Round(successProbability, 1),
                 PlanSummary = $"Kế hoạch đầu tư tối ưu cho thời gian {totalDays} ngày từ {startDate:dd/MM/yyyy} đến {endDate:dd/MM/yyyy}. Mục tiêu tổng thể: {targetAmountToUse:N0} đ. Vốn đầu tư: {pref.AmountPerTrade:N0} đ. Hiện tại đã hoàn thành {targetProgressPercent(cumulativePnL, targetAmountToUse):N1}% mục tiêu.",
                 Actions = actions,
                 ExpectedContributions = expectedContributions,

@@ -1,0 +1,386 @@
+/* ============================================================================ */
+/* PAGE TRANSITIONS & ANIMATIONS */
+/* ============================================================================ */
+
+/* Ensure navbar stays on top */
+header,
+.navbar,
+nav {
+    position: relative;
+    z-index: 1030 !important;
+}
+
+/* Fade-in transition cho toàn bộ page */
+@keyframes pageIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes pageOut {
+    from {
+        opacity: 1;
+        transform: translateY(0);
+    }
+    to {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+}
+
+/* Apply transition to all pages */
+html {
+    scroll-behavior: smooth;
+}
+
+body {
+    animation: pageIn 0.5s ease-out;
+}
+
+/* Transition khi navigate */
+.page-transition {
+    animation: pageIn 0.5s ease-out;
+}
+
+.page-transition-out {
+    animation: pageOut 0.3s ease-in;
+}
+
+/* ============================================================================ */
+/* COMPONENT TRANSITIONS */
+/* ============================================================================ */
+
+/* Glass card fade-in */
+.glass-card {
+    animation: slideInUp 0.6s ease-out;
+}
+
+@keyframes slideInUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Stagger animation cho multiple cards */
+.glass-card:nth-child(1) { animation-delay: 0.1s; }
+.glass-card:nth-child(2) { animation-delay: 0.2s; }
+.glass-card:nth-child(3) { animation-delay: 0.3s; }
+.glass-card:nth-child(4) { animation-delay: 0.4s; }
+.glass-card:nth-child(5) { animation-delay: 0.5s; }
+
+/* Table row animation */
+table tbody tr {
+    animation: slideInLeft 0.4s ease-out;
+}
+
+@keyframes slideInLeft {
+    from {
+        opacity: 0;
+        transform: translateX(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+/* Stagger rows */
+table tbody tr:nth-child(1) { animation-delay: 0.05s; }
+table tbody tr:nth-child(2) { animation-delay: 0.1s; }
+table tbody tr:nth-child(3) { animation-delay: 0.15s; }
+table tbody tr:nth-child(4) { animation-delay: 0.2s; }
+table tbody tr:nth-child(5) { animation-delay: 0.25s; }
+table tbody tr:nth-child(n+6) { animation-delay: 0.3s; }
+
+/* ============================================================================ */
+/* BUTTON & INTERACTION TRANSITIONS */
+/* ============================================================================ */
+
+button,
+a.btn,
+[class*="btn-"] {
+    transition: all 0.3s ease;
+}
+
+button:hover,
+a.btn:hover,
+[class*="btn-"]:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
+}
+
+button:active,
+a.btn:active,
+[class*="btn-"]:active {
+    transform: translateY(0);
+}
+
+/* ============================================================================ */
+/* FORM INPUT TRANSITIONS */
+/* ============================================================================ */
+
+input,
+textarea,
+select,
+.form-control {
+    transition: all 0.3s ease;
+    border-color: rgba(139, 92, 246, 0.2);
+}
+
+input:focus,
+textarea:focus,
+select:focus,
+.form-control:focus {
+    border-color: rgba(139, 92, 246, 0.8);
+    box-shadow: 0 0 12px rgba(139, 92, 246, 0.3);
+    transform: scale(1.02);
+}
+
+/* ============================================================================ */
+/* MODAL TRANSITIONS */
+/* ============================================================================ */
+
+/* Modal fade-in */
+[id*="Modal"] {
+    animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+/* Modal content slide */
+[id*="Modal"] > div {
+    animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* ============================================================================ */
+/* LINK TRANSITIONS */
+/* ============================================================================ */
+
+a:not([class*="btn"]) {
+    transition: color 0.3s ease;
+}
+
+a:hover:not([class*="btn"]) {
+    color: var(--accent-cyan, #06b6d4);
+}
+
+/* ============================================================================ */
+/* GRADIENT & BACKGROUND TRANSITIONS */
+/* ============================================================================ */
+
+.gradient-text {
+    transition: text-shadow 0.3s ease;
+}
+
+.gradient-text:hover {
+    text-shadow: 0 0 20px rgba(139, 92, 246, 0.5);
+}
+
+/* ============================================================================ */
+/* METRIC CARD TRANSITIONS */
+/* ============================================================================ */
+
+.metric-card {
+    transition: all 0.3s ease;
+}
+
+.metric-card:hover {
+    transform: translateY(-8px);
+}
+
+.metric-value {
+    transition: transform 0.3s ease;
+}
+
+.metric-card:hover .metric-value {
+    transform: scale(1.1);
+}
+
+/* ============================================================================ */
+/* STATUS BADGE TRANSITIONS */
+/* ============================================================================ */
+
+.status-badge {
+    transition: all 0.3s ease;
+}
+
+.status-badge:hover {
+    transform: scale(1.05);
+}
+
+/* ============================================================================ */
+/* NAVIGATION TRANSITIONS */
+/* ============================================================================ */
+
+nav a,
+.nav-link {
+    transition: all 0.3s ease;
+    position: relative;
+}
+
+nav a::after,
+.nav-link::after {
+    content: '';
+    position: absolute;
+    bottom: -2px;
+    left: 0;
+    width: 0;
+    height: 2px;
+    background: linear-gradient(90deg, #8b5cf6, #06b6d4);
+    transition: width 0.3s ease;
+}
+
+nav a:hover::after,
+.nav-link:hover::after {
+    width: 100%;
+}
+
+/* ============================================================================ */
+/* PROGRESS BAR TRANSITIONS */
+/* ============================================================================ */
+
+.progress-bar {
+    transition: width 0.6s ease;
+}
+
+/* ============================================================================ */
+/* SCROLL & REVEAL ANIMATIONS */
+/* ============================================================================ */
+
+/* Scroll reveal animation */
+@keyframes revealOnScroll {
+    from {
+        opacity: 0;
+        transform: translateY(30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.reveal {
+    animation: revealOnScroll 0.8s ease-out;
+}
+
+/* ============================================================================ */
+/* LOADING ANIMATIONS */
+/* ============================================================================ */
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.5;
+    }
+}
+
+.loading {
+    animation: spin 1s linear infinite;
+}
+
+.pulse-animation {
+    animation: pulse 2s ease-in-out infinite;
+}
+
+/* ============================================================================ */
+/* RESPECTS PREFERS-REDUCED-MOTION */
+/* ============================================================================ */
+
+@media (prefers-reduced-motion: reduce) {
+    * {
+        animation: none !important;
+        transition: none !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+/* ============================================================================ */
+/* SMOOTH SCROLLING FOR ANCHORS */
+/* ============================================================================ */
+
+html {
+    scroll-behavior: smooth;
+}
+
+a[href^="#"] {
+    scroll-behavior: smooth;
+}
+
+/* ============================================================================ */
+/* DROPDOWN ANIMATIONS */
+/* ============================================================================ */
+
+.dropdown-menu {
+    animation: slideDown 0.3s ease-out;
+}
+
+/* ============================================================================ */
+/* COLLAPSE ANIMATIONS */
+/* ============================================================================ */
+
+.collapse {
+    transition: max-height 0.3s ease, opacity 0.3s ease;
+}
+
+.collapse:not(.show) {
+    max-height: 0;
+    overflow: hidden;
+}
+
+/* ============================================================================ */
+/* FADE IN ON LOAD */
+/* ============================================================================ */
+
+.fade-in {
+    animation: fadeIn 0.5s ease-out;
+}
+
+.fade-in-delayed {
+    animation: fadeIn 1s ease-out;
+    animation-fill-mode: both;
+}
+
+.fade-in-delayed:nth-child(1) { animation-delay: 0.1s; }
+.fade-in-delayed:nth-child(2) { animation-delay: 0.2s; }
+.fade-in-delayed:nth-child(3) { animation-delay: 0.3s; }
+.fade-in-delayed:nth-child(4) { animation-delay: 0.4s; }
+.fade-in-delayed:nth-child(5) { animation-delay: 0.5s; }

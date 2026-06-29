@@ -1,9 +1,11 @@
+@using AITradingSystem.Models
+@using AITradingSystem.Controllers
 @{
     ViewData["Title"] = "AI Trading Copilot - DNSE";
-    var pref = (ViewBag.Preference as AITradingSystem.Models.UserPreference) ?? new AITradingSystem.Models.UserPreference();
-    var positions = ViewBag.Positions as List<AITradingSystem.Models.TradePosition> ?? new List<AITradingSystem.Models.TradePosition>();
-    var stocks = ViewBag.Stocks as List<AITradingSystem.Controllers.StockViewModel> ?? new List<AITradingSystem.Controllers.StockViewModel>();
-    var strategies = ViewBag.Strategies as List<AITradingSystem.Models.TradingStrategy> ?? new List<AITradingSystem.Models.TradingStrategy>();
+    var pref = (ViewBag.Preference as UserPreference) ?? new UserPreference();
+    var positions = ViewBag.Positions as List<TradePosition> ?? new List<TradePosition>();
+    var stocks = ViewBag.Stocks as List<StockViewModel> ?? new List<StockViewModel>();
+    var strategies = ViewBag.Strategies as List<TradingStrategy> ?? new List<TradingStrategy>();
     var totalPnL = (decimal?)ViewBag.TotalPnL ?? 0;
     var chartPositions = positions.ToList();
     var positionLabels = chartPositions.Select(p => p.Symbol).ToList();

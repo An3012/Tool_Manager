@@ -13,6 +13,7 @@ namespace AITradingSystem.Models
         public decimal Price { get; set; }
         public DateTime OrderDate { get; set; } = DateTime.UtcNow;
         public string Status { get; set; } = "PENDING"; // PENDING, FILLED, REJECTED
-        public string Rationale { get; set; } = string.Empty; // Lý do Agent đặt lệnh
+        public string? Rationale { get; set; } // Lý do Agent đặt lệnh, có thể null từ dữ liệu cũ
     }
 }
+

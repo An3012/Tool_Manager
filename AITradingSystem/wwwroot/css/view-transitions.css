@@ -1,0 +1,315 @@
+/* ============================================================================ */
+/* GLOBAL PAGE TRANSITIONS FOR ALL VIEWS */
+/* ============================================================================ */
+
+/* Wrapper để áp dụng page transition */
+.view-container,
+main {
+    animation: pageIn 0.5s ease-out;
+}
+
+/* Mỗi section trong page */
+.section-container {
+    animation: slideInUp 0.6s ease-out;
+}
+
+/* Cards */
+.card,
+[class*="card-"] {
+    animation: slideInUp 0.6s ease-out;
+}
+
+.card:nth-child(1) { animation-delay: 0.1s; }
+.card:nth-child(2) { animation-delay: 0.2s; }
+.card:nth-child(3) { animation-delay: 0.3s; }
+.card:nth-child(4) { animation-delay: 0.4s; }
+.card:nth-child(5) { animation-delay: 0.5s; }
+
+/* Tables */
+table {
+    animation: slideInUp 0.6s ease-out;
+}
+
+table tbody tr {
+    animation: slideInLeft 0.4s ease-out;
+}
+
+table tbody tr:nth-child(1) { animation-delay: 0.05s; }
+table tbody tr:nth-child(2) { animation-delay: 0.1s; }
+table tbody tr:nth-child(3) { animation-delay: 0.15s; }
+table tbody tr:nth-child(4) { animation-delay: 0.2s; }
+table tbody tr:nth-child(5) { animation-delay: 0.25s; }
+
+/* Form elements */
+.form-group,
+form > div {
+    animation: slideInLeft 0.5s ease-out;
+}
+
+.form-group:nth-child(1) { animation-delay: 0.1s; }
+.form-group:nth-child(2) { animation-delay: 0.15s; }
+.form-group:nth-child(3) { animation-delay: 0.2s; }
+.form-group:nth-child(4) { animation-delay: 0.25s; }
+
+/* List items */
+li {
+    animation: slideInLeft 0.4s ease-out;
+}
+
+ul li:nth-child(1) { animation-delay: 0.1s; }
+ul li:nth-child(2) { animation-delay: 0.15s; }
+ul li:nth-child(3) { animation-delay: 0.2s; }
+ul li:nth-child(4) { animation-delay: 0.25s; }
+ul li:nth-child(5) { animation-delay: 0.3s; }
+
+/* Headers */
+h1, h2, h3, h4, h5, h6 {
+    animation: slideInDown 0.5s ease-out;
+}
+
+/* Images */
+img {
+    animation: fadeIn 0.6s ease-out;
+}
+
+/* Charts */
+canvas,
+[data-chart],
+.chart-container {
+    animation: slideInUp 0.7s ease-out;
+}
+
+/* Badges */
+.badge,
+[class*="badge"] {
+    animation: popIn 0.4s ease-out;
+}
+
+@keyframes popIn {
+    0% {
+        opacity: 0;
+        transform: scale(0.8);
+    }
+    50% {
+        transform: scale(1.1);
+    }
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+/* Alerts */
+.alert,
+[class*="alert-"] {
+    animation: slideDown 0.4s ease-out;
+}
+
+/* ============================================================================ */
+/* HOVER & INTERACTIVE EFFECTS */
+/* ============================================================================ */
+
+/* Smooth transitions on all interactive elements */
+button,
+a,
+input,
+textarea,
+select {
+    transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+/* Button hover effects */
+button:hover,
+.btn:hover,
+[class*="btn-"]:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+}
+
+button:active,
+.btn:active,
+[class*="btn-"]:active {
+    transform: translateY(0);
+}
+
+/* Input focus effects */
+input:focus,
+textarea:focus,
+select:focus {
+    transform: scale(1.01);
+    box-shadow: 0 0 12px rgba(139, 92, 246, 0.3);
+}
+
+/* Link hover effects */
+a:not([class*="btn"]):hover {
+    text-decoration: underline;
+}
+
+/* ============================================================================ */
+/* LOADING & SKELETON */
+/* ============================================================================ */
+
+.skeleton {
+    animation: loading 1.5s infinite;
+}
+
+@keyframes loading {
+    0%, 100% {
+        background-color: rgba(255, 255, 255, 0.1);
+    }
+    50% {
+        background-color: rgba(255, 255, 255, 0.2);
+    }
+}
+
+/* ============================================================================ */
+/* MICRO INTERACTIONS */
+/* ============================================================================ */
+
+/* Checkbox animation */
+input[type="checkbox"]:checked ~ label::after,
+input[type="radio"]:checked ~ label::after {
+    animation: checkmark 0.3s ease-out;
+}
+
+@keyframes checkmark {
+    0% {
+        transform: scale(0);
+    }
+    50% {
+        transform: scale(1.2);
+    }
+    100% {
+        transform: scale(1);
+    }
+}
+
+/* ============================================================================ */
+/* SCROLL ANIMATIONS */
+/* ============================================================================ */
+
+/* Smooth scroll behavior */
+html {
+    scroll-behavior: smooth;
+}
+
+/* Fade in on scroll */
+.fade-on-scroll {
+    opacity: 0;
+    transform: translateY(20px);
+    transition: opacity 0.6s ease, transform 0.6s ease;
+}
+
+.fade-on-scroll.visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+/* ============================================================================ */
+/* GRID ANIMATIONS */
+/* ============================================================================ */
+
+.grid > * {
+    animation: slideInUp 0.5s ease-out;
+}
+
+.grid > :nth-child(1) { animation-delay: 0.1s; }
+.grid > :nth-child(2) { animation-delay: 0.15s; }
+.grid > :nth-child(3) { animation-delay: 0.2s; }
+.grid > :nth-child(4) { animation-delay: 0.25s; }
+.grid > :nth-child(5) { animation-delay: 0.3s; }
+.grid > :nth-child(6) { animation-delay: 0.35s; }
+
+/* ============================================================================ */
+/* ANIMATION DEFINITIONS */
+/* ============================================================================ */
+
+@keyframes pageIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes slideInUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes slideInDown {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes slideInLeft {
+    from {
+        opacity: 0;
+        transform: translateX(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@keyframes slideInRight {
+    from {
+        opacity: 0;
+        transform: translateX(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+/* ============================================================================ */
+/* RESPECTS PREFERS-REDUCED-MOTION */
+/* ============================================================================ */
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}

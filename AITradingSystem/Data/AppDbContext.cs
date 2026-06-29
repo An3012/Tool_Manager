@@ -23,6 +23,12 @@ namespace AITradingSystem.Data
         public DbSet<AiTradePosition>? AiTradePositions { get; set; }
         public DbSet<AiOrder>? AiOrders { get; set; }
 
+        // AI Learning & Planning DbSets
+        public DbSet<AiPlanPrediction>? AiPlanPredictions { get; set; }
+        public DbSet<AiLearningKnowledge>? AiLearningKnowledge { get; set; }
+        public DbSet<UserAiGoal>? UserAiGoals { get; set; }
+        public DbSet<InvestmentPlan>? InvestmentPlans { get; set; }
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
@@ -160,6 +166,74 @@ namespace AITradingSystem.Data
 
             modelBuilder.Entity<AiTradePosition>()
                 .Property(p => p.BudgetAmount)
+                .HasColumnType("decimal(18,4)");
+
+            // AiPlanPrediction decimal precision
+            modelBuilder.Entity<AiPlanPrediction>()
+                .Property(p => p.TargetProfit)
+                .HasColumnType("decimal(18,2)");
+
+            modelBuilder.Entity<AiPlanPrediction>()
+                .Property(p => p.Capital)
+                .HasColumnType("decimal(18,2)");
+
+            modelBuilder.Entity<AiPlanPrediction>()
+                .Property(p => p.SuccessProbability)
+                .HasColumnType("decimal(5,2)");
+
+            // UserAiGoal decimal precision
+            modelBuilder.Entity<UserAiGoal>()
+                .Property(g => g.InitialCapital)
+                .HasColumnType("decimal(18,2)");
+
+            modelBuilder.Entity<UserAiGoal>()
+                .Property(g => g.TargetProfit)
+                .HasColumnType("decimal(18,2)");
+
+            modelBuilder.Entity<UserAiGoal>()
+                .Property(g => g.ProgressPercentage)
+                .HasColumnType("decimal(5,2)");
+
+            modelBuilder.Entity<UserAiGoal>()
+                .Property(g => g.MinDailyReturnPct)
+                .HasColumnType("decimal(5,2)");
+
+            modelBuilder.Entity<UserAiGoal>()
+                .Property(g => g.MaxDailyLossPct)
+                .HasColumnType("decimal(5,2)");
+
+            // AiLearningKnowledge decimal precision
+            modelBuilder.Entity<AiLearningKnowledge>()
+                .Property(k => k.AccuracyScore)
+                .HasColumnType("decimal(5,2)");
+
+            modelBuilder.Entity<AiLearningKnowledge>()
+                .Property(k => k.WeightScore)
+                .HasColumnType("decimal(5,2)");
+
+            // InvestmentPlan decimal precision (if needed)
+            modelBuilder.Entity<InvestmentPlan>()
+                .Property(i => i.Capital)
+                .HasColumnType("decimal(18,4)");
+
+            modelBuilder.Entity<InvestmentPlan>()
+                .Property(i => i.TargetProfit)
+                .HasColumnType("decimal(18,4)");
+
+            modelBuilder.Entity<InvestmentPlan>()
+                .Property(i => i.ActualProfit)
+                .HasColumnType("decimal(18,4)");
+
+            modelBuilder.Entity<InvestmentPlan>()
+                .Property(i => i.RemainingProfitNeeded)
+                .HasColumnType("decimal(18,4)");
+
+            modelBuilder.Entity<InvestmentPlan>()
+                .Property(i => i.SuccessProbability)
+                .HasColumnType("decimal(5,2)");
+
+            modelBuilder.Entity<InvestmentPlan>()
+                .Property(i => i.FinalProfit)
                 .HasColumnType("decimal(18,4)");
         }
     }

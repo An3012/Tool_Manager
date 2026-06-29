@@ -88,6 +88,31 @@
     }
 </style>
 
+<script>
+    const input1 = document.getElementById("TargetAmount");
+    input1.addEventListener("input", function () {
+        let value = this.value.replace(/\D/g, "");
+
+        if (value === "") {
+            this.value = "";
+            return;
+        }
+
+        this.value = Number(value).toLocaleString("vi-VN");
+    });
+    
+    const input2 = document.getElementById("AmountPerTrade");
+    input2.addEventListener("input", function () {
+        let value = this.value.replace(/\D/g, "");
+
+        if (value === "") {
+            this.value = "";
+            return;
+        }
+
+        this.value = Number(value).toLocaleString("vi-VN");
+    });
+</script>
 <div class="container py-5">
     <div class="mb-5">
         <h1 class="fw-bold mb-2"><span class="gradient-text">Cấu hình & Liên kết</span></h1>
@@ -115,11 +140,19 @@
                     <div class="row g-3">
                         <div class="col-md-6">
                             <label class="custom-label">Phân tiền mỗi lệnh (đ)</label>
-                            <input type="number" name="AmountPerTrade" value="@((long)pref.AmountPerTrade)" class="form-control custom-input" min="0" step="100000" />
+                            <input type="text" 
+                            id="AmountPerTrade" 
+                            name="AmountPerTrade" 
+                            value="@pref.AmountPerTrade.ToString("N0").Replace(",", ".")" 
+                            class="form-control custom-input" />
                         </div>
                         <div class="col-md-6">
                             <label class="custom-label">Mục tiêu lợi nhuận (đ)</label>
-                            <input type="number" name="TargetAmount" value="@((long)pref.TargetAmount)" class="form-control custom-input" min="0" step="100000" />
+                            <input type="text"
+                                id="TargetAmount"
+                                name="TargetAmount"
+                                value="@pref.TargetAmount.ToString("N0").Replace(",", ".")"
+                                class="form-control custom-input" />
                         </div>
                     </div>
 

@@ -16,8 +16,8 @@ namespace AITradingSystem.Models
         public decimal RemainingProfitNeeded { get; set; }
         public int DaysRemainingAtRun { get; set; }
         public decimal SuccessProbability { get; set; }
-        public string Status { get; set; } = "Pending";
+        public string? Status { get; set; } = "Pending";
         public decimal? FinalProfit { get; set; }
-        public string DailyCalendarJson { get; set; } = string.Empty;
+        public string? DailyCalendarJson { get; set; } = string.Empty;
     }
 }
