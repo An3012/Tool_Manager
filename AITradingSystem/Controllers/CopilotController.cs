@@ -384,7 +384,7 @@ namespace AITradingSystem.Controllers
                 analysis.SymbolRealizedPnL = userTransactions
                     .Where(t => t.Symbol == pos.Symbol && t.TransactionType == "SELL" && t.PnlAmount.HasValue)
                     .Sum(t => t.PnlAmount.Value);
-                analysis.SymbolCumulativePnL = analysis.SymbolRealizedPnL + (pos.Status == "OPEN" ? pos.PnL : 0);
+                analysis.SymbolCumulativePnL = analysis.SymbolRealizedPnL;
 
                 analysisMap[pos.Id] = analysis;
                 if (pos.Status == "OPEN")
@@ -393,7 +393,7 @@ namespace AITradingSystem.Controllers
                 }
             }
 
-            cumulativePnL += totalPnL;
+            // cumulativePnL += totalPnL;
             decimal remainingOtherBudget = Math.Max(0m, pref.AmountPerTrade - allocatedBudget);
 
             DateTime planStartDate = pref.PlanStartDate ?? DateTime.Today;
@@ -403,7 +403,7 @@ namespace AITradingSystem.Controllers
             decimal planUnrealizedPnL = positions
                 .Where(p => p.Status == "OPEN" && p.EntryDate >= planStartDate)
                 .Sum(p => p.PnL);
-            decimal planPnL = planRealizedPnL + planUnrealizedPnL;
+            decimal planPnL = planRealizedPnL;
 
             ViewBag.PlanPnL = planPnL;
             ViewBag.Positions = positions;
@@ -427,7 +427,7 @@ namespace AITradingSystem.Controllers
                 .ToListAsync();
             ViewBag.HistoryPlans = pastPlans;
 
-            var latestPlan = pastPlans.FirstOrDefault();
+            var latestPlan = pastPlans.FirstOrDefault(p => p.Status == "Active") ?? pastPlans.FirstOrDefault();
             if (latestPlan != null)
             {
                 ViewBag.LatestPlanDb = latestPlan;
@@ -476,7 +476,7 @@ namespace AITradingSystem.Controllers
         }
 
         [HttpPost]
-        public async Task<IActionResult> RunPlanAnalysis()
+        public async Task<IActionResult> RunPlanAnalysis(int? prefId)
         {
             // 1. Get all positions from DB
             var dbPositions = await _context.TradePositions.ToListAsync();
@@ -553,7 +553,15 @@ namespace AITradingSystem.Controllers
 
             var closedPositions = positions.Where(p => p.Status == "CLOSED").ToList();
             var stocks = GetDNSEStocks();
-            var pref = await GetUserPreference();
+            UserPreference pref;
+            if (prefId.HasValue)
+            {
+                pref = await _context.UserPreferences.FindAsync(prefId.Value) ?? await GetUserPreference();
+            }
+            else
+            {
+                pref = await GetUserPreference();
+            }
 
             decimal totalPnL = 0;
             decimal totalRealizedPnL = userTransactions.Any(t => t.TransactionType == "SELL" && t.PnlAmount.HasValue)
@@ -568,7 +576,7 @@ namespace AITradingSystem.Controllers
                 pos.PnL = (currentPrice - pos.EntryPrice) * pos.Quantity;
                 totalPnL += pos.PnL;
             }
-            cumulativePnL += totalPnL;
+            // cumulativePnL += totalPnL;
 
             decimal totalTargetAmount = 0;
             foreach (var pos in positions)
@@ -596,7 +604,7 @@ namespace AITradingSystem.Controllers
                 decimal planUnrealizedPnL = positions
                     .Where(p => p.Status == "OPEN" && p.EntryDate >= planStartDate)
                     .Sum(p => p.PnL);
-                decimal planPnL = planRealizedPnL + planUnrealizedPnL;
+                decimal planPnL = planRealizedPnL;
 
                 var remainingProfitNeeded = Math.Max(0m, targetAmountToUse - planPnL);
                 var options = new System.Text.Json.JsonSerializerOptions
@@ -605,24 +613,47 @@ namespace AITradingSystem.Controllers
                     NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowReadingFromString | System.Text.Json.Serialization.JsonNumberHandling.WriteAsString,
                     Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() }
                 };
-                var investmentPlan = new InvestmentPlan
-                {
-                    RunDate = DateTime.Now,
-                    StartDate = plan.StartDate == default ? (pref.PlanStartDate ?? DateTime.Today) : plan.StartDate,
-                    EndDate = plan.EndDate == default ? DateTime.Today : plan.EndDate,
-                    Capital = pref.AmountPerTrade,
-                    TargetProfit = targetAmountToUse,
-                    ActualProfit = planPnL,
-                    RemainingProfitNeeded = remainingProfitNeeded,
-                    DaysRemainingAtRun = plan.RemainingDays,
-                    SuccessProbability = (decimal)plan.SuccessProbability,
-                    Status = "Active",
-                    DailyCalendarJson = System.Text.Json.JsonSerializer.Serialize(plan, options)
-                };
+                var activePlan = await _context.InvestmentPlans
+                    .FirstOrDefaultAsync(p => p.Status == "Active");
 
-                _context.InvestmentPlans?.Add(investmentPlan);
-                await _context.SaveChangesAsync();
-                TempData["LatestPlanId"] = investmentPlan.Id;
+                if (activePlan != null)
+                {
+                    activePlan.RunDate = DateTime.Now;
+                    activePlan.StartDate = plan.StartDate == default ? (pref.PlanStartDate ?? DateTime.Today) : plan.StartDate;
+                    activePlan.EndDate = plan.EndDate == default ? DateTime.Today : plan.EndDate;
+                    activePlan.Capital = pref.AmountPerTrade;
+                    activePlan.TargetProfit = targetAmountToUse;
+                    activePlan.ActualProfit = planPnL;
+                    activePlan.RemainingProfitNeeded = remainingProfitNeeded;
+                    activePlan.DaysRemainingAtRun = plan.RemainingDays;
+                    activePlan.SuccessProbability = (decimal)plan.SuccessProbability;
+                    activePlan.DailyCalendarJson = System.Text.Json.JsonSerializer.Serialize(plan, options);
+
+                    _context.InvestmentPlans.Update(activePlan);
+                    await _context.SaveChangesAsync();
+                    TempData["LatestPlanId"] = activePlan.Id;
+                }
+                else
+                {
+                    var investmentPlan = new InvestmentPlan
+                    {
+                        RunDate = DateTime.Now,
+                        StartDate = plan.StartDate == default ? (pref.PlanStartDate ?? DateTime.Today) : plan.StartDate,
+                        EndDate = plan.EndDate == default ? DateTime.Today : plan.EndDate,
+                        Capital = pref.AmountPerTrade,
+                        TargetProfit = targetAmountToUse,
+                        ActualProfit = planPnL,
+                        RemainingProfitNeeded = remainingProfitNeeded,
+                        DaysRemainingAtRun = plan.RemainingDays,
+                        SuccessProbability = (decimal)plan.SuccessProbability,
+                        Status = "Active",
+                        DailyCalendarJson = System.Text.Json.JsonSerializer.Serialize(plan, options)
+                    };
+
+                    _context.InvestmentPlans.Add(investmentPlan);
+                    await _context.SaveChangesAsync();
+                    TempData["LatestPlanId"] = investmentPlan.Id;
+                }
             }
 
             // Populate history for the partial view
@@ -634,6 +665,57 @@ namespace AITradingSystem.Controllers
             ViewBag.Preference = pref;
 
             return PartialView("_AiPlanPartial");
+        }
+
+        [HttpPost]
+        [IgnoreAntiforgeryToken]
+        public async Task<IActionResult> DeletePlan(int id)
+        {
+            if (_context.InvestmentPlans == null)
+            {
+                return NotFound(new { success = false, message = "Không có kết nối CSDL." });
+            }
+            var plan = await _context.InvestmentPlans.FindAsync(id);
+            if (plan == null)
+            {
+                return NotFound(new { success = false, message = "Không tìm thấy kế hoạch." });
+            }
+
+            plan.Status = "Cancelled";
+            _context.InvestmentPlans.Update(plan);
+            await _context.SaveChangesAsync();
+
+            return Ok(new { success = true, message = "Đã chuyển kế hoạch sang trạng thái hủy thành công." });
+        }
+
+        [HttpPost]
+        [IgnoreAntiforgeryToken]
+        public async Task<IActionResult> ActivatePlan(int id)
+        {
+            if (_context.InvestmentPlans == null)
+            {
+                return NotFound(new { success = false, message = "Không có kết nối CSDL." });
+            }
+            var plan = await _context.InvestmentPlans.FindAsync(id);
+            if (plan == null)
+            {
+                return NotFound(new { success = false, message = "Không tìm thấy kế hoạch." });
+            }
+
+            // Set other Active plans to Expired
+            var activePlans = await _context.InvestmentPlans
+                .Where(p => p.Status == "Active")
+                .ToListAsync();
+            foreach (var p in activePlans)
+            {
+                p.Status = "Expired";
+            }
+
+            plan.Status = "Active";
+            _context.InvestmentPlans.Update(plan);
+            await _context.SaveChangesAsync();
+
+            return Ok(new { success = true, message = "Kích hoạt kế hoạch thành công." });
         }
 
         private void PopulateActualActions(List<AITradingSystem.Models.DailyCalendarItem> calendar, List<StockTransaction> transactions)
@@ -650,7 +732,14 @@ namespace AITradingSystem.Controllers
                     }
                     else
                     {
-                        item.ActualAction = "-";
+                        if (parsedDate.Date <= DateTime.Today.Date)
+                        {
+                            item.ActualAction = "Không có giao dịch từ người dùng";
+                        }
+                        else
+                        {
+                            item.ActualAction = "-";
+                        }
                     }
                 }
             }
@@ -660,9 +749,73 @@ namespace AITradingSystem.Controllers
 
         public async Task<IActionResult> Account()
         {
-            var preference = await GetUserPreference();
-            ViewBag.Preference = preference;
+            var preferences = await _context.UserPreferences.ToListAsync();
+            if (!preferences.Any())
+            {
+                var defaultPref = new UserPreference
+                {
+                    InvestmentHorizon = "Short-term (T+2.5)",
+                    TargetProfitPercentage = 15,
+                    MaxLossPercentage = 7,
+                    AmountPerTrade = 5000000,
+                    TargetAmount = 10000000,
+                    RiskTolerance = "Medium"
+                };
+                _context.UserPreferences.Add(defaultPref);
+                await _context.SaveChangesAsync();
+                preferences.Add(defaultPref);
+            }
+            ViewBag.PreferencesList = preferences;
+            ViewBag.Preference = preferences.FirstOrDefault(p => !string.IsNullOrEmpty(p.DnseUsername)) ?? preferences.First();
             return View();
+        }
+
+        [HttpPost]
+        [IgnoreAntiforgeryToken]
+        public async Task<IActionResult> CompletePlan(int id)
+        {
+            if (_context.InvestmentPlans == null)
+            {
+                return NotFound(new { success = false, message = "Không có kết nối CSDL." });
+            }
+            var plan = await _context.InvestmentPlans.FindAsync(id);
+            if (plan == null)
+            {
+                return NotFound(new { success = false, message = "Không tìm thấy kế hoạch." });
+            }
+
+            plan.Status = "Success";
+            _context.InvestmentPlans.Update(plan);
+            await _context.SaveChangesAsync();
+
+            return Ok(new { success = true, message = "Đã đánh dấu hoàn thành kế hoạch thành công." });
+        }
+
+        [HttpPost]
+        [IgnoreAntiforgeryToken]
+        public async Task<IActionResult> DeletePreference(int id)
+        {
+            if (_context.UserPreferences == null)
+            {
+                return NotFound(new { success = false, message = "Không có kết nối CSDL." });
+            }
+            var pref = await _context.UserPreferences.FindAsync(id);
+            if (pref == null)
+            {
+                return NotFound(new { success = false, message = "Không tìm thấy cấu hình." });
+            }
+
+            // Don't delete the last one to prevent blank state
+            var count = await _context.UserPreferences.CountAsync();
+            if (count <= 1)
+            {
+                return BadRequest(new { success = false, message = "Không thể xóa cấu hình cuối cùng." });
+            }
+
+            _context.UserPreferences.Remove(pref);
+            await _context.SaveChangesAsync();
+
+            return Ok(new { success = true, message = "Xóa cấu hình mục tiêu thành công." });
         }
 
         [HttpPost]
@@ -765,32 +918,28 @@ namespace AITradingSystem.Controllers
         {
             if (ModelState.IsValid)
             {
-                var existing = await _context.UserPreferences.FirstOrDefaultAsync();
-                if (existing == null)
+                var existingDnse = await _context.UserPreferences
+                    .FirstOrDefaultAsync(p => !string.IsNullOrEmpty(p.DnseUsername));
+
+                model.Id = 0; // force insert new row
+                if (existingDnse != null)
+                {
+                    model.DnseUsername = existingDnse.DnseUsername;
+                    model.DnsePassword = existingDnse.DnsePassword;
+                    model.DnseToken = existingDnse.DnseToken;
+                }
+                else
                 {
                     model.DnseUsername = string.Empty;
                     model.DnsePassword = string.Empty;
                     model.DnseToken = string.Empty;
-                    _context.UserPreferences.Add(model);
                 }
-                else
-                {
-                    existing.InvestmentHorizon = model.InvestmentHorizon;
-                    existing.TargetProfitPercentage = model.TargetProfitPercentage;
-                    existing.MaxLossPercentage = model.MaxLossPercentage;
-                    existing.AmountPerTrade = model.AmountPerTrade;
-                    existing.TargetAmount = model.TargetAmount;
-                    existing.TakeProfitAmount = model.TakeProfitAmount;
-                    existing.StopLossAmount = model.StopLossAmount;
-                    existing.RiskTolerance = model.RiskTolerance;
-                    existing.PlanStartDate = model.PlanStartDate;
 
-                    _context.UserPreferences.Update(existing);
-                }
+                _context.UserPreferences.Add(model);
                 await _context.SaveChangesAsync();
-                TempData["SuccessMessage"] = "Cập nhật cấu hình mục tiêu đầu tư thành công!";
+                TempData["SuccessMessage"] = "Đã lưu thêm cấu hình mục tiêu mới!";
             }
-            return RedirectToAction(nameof(Index));
+            return RedirectToAction(nameof(Account));
         }
 
         // Liên kết tài khoản DNSE / DNSE

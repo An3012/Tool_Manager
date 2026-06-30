@@ -424,7 +424,7 @@ margin-bottom: 0 !important;
             {
                 <form asp-action="RunPlanAnalysis" method="post" id="runPlanForm" class="m-0">
                     <button type="submit" onclick="showGlobalLoading()" class="btn text-white fw-bold d-flex align-items-center gap-2" style="background: linear-gradient(135deg, #8b5cf6 0%, #3b82f6 100%); border-radius: 12px; padding: 10px 20px; border: none; box-shadow: 0 4px 15px rgba(139, 92, 246, 0.3); cursor: pointer; transition: all 0.2s; font-size: 0.9rem;">
-                        <span>🧠</span> AI Phân tích và dự đoán kế hoạch
+                        <span>🧠</span> AI phân tích & dự đoán vượt mục tiêu tối thiểu trong kỳ
                     </button>
                 </form>
             }
@@ -471,12 +471,7 @@ margin-bottom: 0 !important;
         @targetPeriodAmount.ToString("N0") đ
     </div>
 </div>
-<div class="summary-card target-card" style="border-top: 3px solid var(--accent-cyan);">
-    <div class="card-label">Mục tiêu toàn bộ kế hoạch</div>
-    <div class="card-value" style="color: var(--accent-cyan);">
-        @totalPlansTarget.ToString("N0") đ
-    </div>
-</div>
+
 <div class="summary-card count-card" style="border-top: 3px solid var(--accent-green);">
     <div class="card-label">Số lần Đạt / Thất bại</div>
     <div class="card-value" style="font-size: 1.4rem; font-weight: 700; padding-top: 4px;">
@@ -1905,5 +1900,85 @@ alert('Không thể tải chi tiết kế hoạch đầu tư lịch sử: ' + er
 
 function closeHistoricalPlan() {
 document.getElementById('historicalPlanModal').style.display = 'none';
+}
+
+function deleteHistoricalPlan(id, button) {
+    if (!confirm("Bạn có chắc chắn muốn xóa kế hoạch đầu tư này khỏi lịch sử chạy không?")) {
+        return;
+    }
+    
+    fetch('/Copilot/DeletePlan?id=' + id, {
+        method: 'POST'
+    })
+    .then(response => {
+        if (!response.ok) throw new Error('Không thể xóa kế hoạch');
+        return response.json();
+    })
+    .then(data => {
+        if (data.success) {
+            const row = button.closest('tr');
+            if (row) {
+                row.remove();
+            } else {
+                location.reload();
+            }
+        } else {
+            alert(data.message || 'Xóa thất bại.');
+        }
+    })
+    .catch(error => {
+        console.error(error);
+        alert('Lỗi khi xóa kế hoạch: ' + error.message);
+    });
+}
+
+function activateHistoricalPlan(id, button) {
+    if (!confirm("Bạn có chắc chắn muốn kích hoạt và chạy kế hoạch đầu tư này không?")) {
+        return;
+    }
+    
+    fetch('/Copilot/ActivatePlan?id=' + id, {
+        method: 'POST'
+    })
+    .then(response => {
+        if (!response.ok) throw new Error('Không thể kích hoạt kế hoạch');
+        return response.json();
+    })
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert(data.message || 'Kích hoạt thất bại.');
+        }
+    })
+    .catch(error => {
+        console.error(error);
+        alert('Lỗi khi kích hoạt kế hoạch: ' + error.message);
+    });
+}
+
+function completeHistoricalPlan(id, button) {
+    if (!confirm("Bạn có chắc chắn muốn đánh dấu kế hoạch này là HOÀN THÀNH không?")) {
+        return;
+    }
+    
+    fetch('/Copilot/CompletePlan?id=' + id, {
+        method: 'POST'
+    })
+    .then(response => {
+        if (!response.ok) throw new Error('Không thể hoàn thành kế hoạch');
+        return response.json();
+    })
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert(data.message || 'Thao tác thất bại.');
+        }
+    })
+    .catch(error => {
+        console.error(error);
+        alert('Lỗi: ' + error.message);
+    });
 }
 </script>

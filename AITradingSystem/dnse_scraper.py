@@ -1111,7 +1111,7 @@ def main():
 
         for channel in ["chrome", "msedge"]:
             try:
-                browser = p.chromium.launch(headless=False, channel=channel, args=["--start-maximized"])
+                browser = p.chromium.launch(headless=True, channel=channel, args=["--start-maximized"])
                 log(f"[INFO] Browser launched via channel: {channel}")
                 break
             except Exception as ex:
@@ -1120,7 +1120,7 @@ def main():
 
         if browser is None:
             try:
-                browser = p.chromium.launch(headless=False, args=["--start-maximized"])
+                browser = p.chromium.launch(headless=True, args=["--start-maximized"])
                 log("[INFO] Browser launched via bundled Chromium")
             except Exception as ex:
                 log(f"[ERROR] Browser launch failed: {ex}")

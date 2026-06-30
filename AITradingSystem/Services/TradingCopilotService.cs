@@ -634,6 +634,27 @@ Vui lòng trả về kết quả dưới định dạng JSON khớp chính xác 
                 }
                 else
                 {
+                    var syncThresholdDate = DateTime.Now.TimeOfDay >= new TimeSpan(15, 30, 0)
+                        ? DateTime.Today.Date.AddDays(1)
+                        : DateTime.Today.Date;
+
+                    if (date <= syncThresholdDate)
+                    {
+                        foreach (var pos in positions)
+                        {
+                            symbolHoldings[pos.Symbol] = pos.Quantity;
+                        }
+                        var posSymbols = positions.Select(p => p.Symbol).ToHashSet();
+                        foreach (var key in symbolHoldings.Keys.ToList())
+                        {
+                            if (!posSymbols.Contains(key))
+                            {
+                                symbolHoldings[key] = 0;
+                            }
+                        }
+                        simulatedRemainingBudget = remainingOtherBudget;
+                    }
+
                     businessDayIndex++;
                     int cycleStep = (businessDayIndex - 1) % 4; // 0 = MUA, 1 = THEO DÕI/MUA GIA TĂNG, 2 = GỒNG LÃI/QUẢN TRỊ, 3 = BÁN CHỐT LỜI XOAY VÒNG
                     int stockIndex = ((businessDayIndex - 1) / 4) % candidateStocks.Count;

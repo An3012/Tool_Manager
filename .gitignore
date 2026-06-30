@@ -12,3 +12,7 @@ bin/
 # Scraper outputs/temp files
 debug_login.png
 dnse_deals.json
+
+# Ignore published build folders
+publish/
+AITradingSystem/publish/

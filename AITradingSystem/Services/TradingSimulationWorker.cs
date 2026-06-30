@@ -3,13 +3,13 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using AITradingSystem.Controllers;
+using AITradingSystem.Data;
+using AITradingSystem.Models;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using AITradingSystem.Data;
-using AITradingSystem.Models;
-using AITradingSystem.Controllers;
-using Microsoft.EntityFrameworkCore;
 
 namespace AITradingSystem.Services
 {
@@ -20,6 +20,8 @@ namespace AITradingSystem.Services
         private readonly ILogger<TradingSimulationWorker> _logger;
         private readonly Random _random = new();
         private DateTime _lastDnseSyncAndPlanUpdate = DateTime.MinValue;
+        private DateTime _lastMorningUpdateDate = DateTime.MinValue;
+        private DateTime _lastAfternoonUpdateDate = DateTime.MinValue;
 
         public TradingSimulationWorker(
             IServiceProvider serviceProvider,
@@ -282,12 +284,38 @@ namespace AITradingSystem.Services
 
         private async Task AutoSyncDnseAndUpdatePlanAsync(AppDbContext context, DnseService dnseService, TradingCopilotService copilotService, CancellationToken stoppingToken)
         {
-            if (_lastDnseSyncAndPlanUpdate != DateTime.MinValue && (DateTime.Now - _lastDnseSyncAndPlanUpdate).TotalHours < 1)
+            var now = DateTime.Now;
+            bool shouldUpdate = false;
+
+            // 1. Morning update slot: 08:00 to 09:00 AM (Trước 09:00 AM)
+            if (now.Hour >= 8 && now.Hour < 9 && _lastMorningUpdateDate.Date != now.Date)
             {
-                return;
+                shouldUpdate = true;
+                _lastMorningUpdateDate = now;
+            }
+            // 2. Afternoon update slot: 15:00 to 16:00 PM (Sau 15:00 PM)
+            else if (now.Hour >= 15 && now.Hour < 16 && _lastAfternoonUpdateDate.Date != now.Date)
+            {
+                shouldUpdate = true;
+                _lastAfternoonUpdateDate = now;
             }
 
-            _logService.AddLog("[System] Khởi chạy đồng bộ tài khoản DNSE & cập nhật kế hoạch định kỳ (mỗi 1h)...");
+            if (!shouldUpdate)
+            {
+                // Fallback: If it has never run since start, let it run once immediately
+                if (_lastDnseSyncAndPlanUpdate == DateTime.MinValue)
+                {
+                    shouldUpdate = true;
+                }
+                else
+                {
+                    return;
+                }
+            }
+
+            _lastDnseSyncAndPlanUpdate = now;
+            _logService.AddLog($"[System] Khởi chạy đồng bộ tài khoản DNSE & cập nhật kế hoạch tự động (Thời gian: {now:HH:mm:ss})...");
+
             try
             {
                 // 1. Đồng bộ tài khoản DNSE
@@ -366,7 +394,7 @@ namespace AITradingSystem.Services
                     pos.PnL = (currentPrice - pos.EntryPrice) * pos.Quantity;
                     totalPnL += pos.PnL;
                 }
-                cumulativePnL += totalPnL;
+                // cumulativePnL += totalPnL;
 
                 decimal totalTargetAmount = 0;
                 foreach (var pos in positions)
@@ -391,6 +419,24 @@ namespace AITradingSystem.Services
 
                 var plan = await copilotService.GenerateGlobalPortfolioPlanAsync(openPositions, pref, stockViewModels, cumulativePnL, totalTargetAmount);
 
+                var existingActivePlan = await context.InvestmentPlans
+                        .Where(p => p.Status == "Active")
+                        .FirstOrDefaultAsync(stoppingToken);
+
+                bool isExpired = false;
+                if (existingActivePlan != null)
+                {
+                    if (existingActivePlan.EndDate < DateTime.Today)
+                    {
+                        // Kế hoạch hiện tại đã hết hạn, cập nhật trạng thái thành "Expired"
+                        existingActivePlan.Status = "Expired";
+                        context.InvestmentPlans.Update(existingActivePlan);
+                        await context.SaveChangesAsync(stoppingToken);
+                        _logService.AddLog($"[System] Kế hoạch đầu tư cũ (ID: {existingActivePlan.Id}) đã hết hạn và được cập nhật thành 'Expired'.");
+                        isExpired = true;
+                    }
+                }
+
                 if (plan != null)
                 {
                     var targetAmountToUse = pref.TargetAmount;
@@ -401,7 +447,7 @@ namespace AITradingSystem.Services
                     decimal planUnrealizedPnL = positions
                         .Where(p => p.Status == "OPEN" && p.EntryDate >= planStartDate)
                         .Sum(p => p.PnL);
-                    decimal planPnL = planRealizedPnL + planUnrealizedPnL;
+                    decimal planPnL = planRealizedPnL;
 
                     var remainingProfitNeeded = Math.Max(0m, targetAmountToUse - planPnL);
                     var options = new System.Text.Json.JsonSerializerOptions
@@ -410,24 +456,47 @@ namespace AITradingSystem.Services
                         NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowReadingFromString | System.Text.Json.Serialization.JsonNumberHandling.WriteAsString,
                         Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() }
                     };
-                    var investmentPlan = new InvestmentPlan
-                    {
-                        RunDate = DateTime.Now,
-                        StartDate = plan.StartDate == default ? planStartDate : plan.StartDate,
-                        EndDate = plan.EndDate == default ? DateTime.Today : plan.EndDate,
-                        Capital = pref.AmountPerTrade,
-                        TargetProfit = targetAmountToUse,
-                        ActualProfit = planPnL,
-                        RemainingProfitNeeded = remainingProfitNeeded,
-                        DaysRemainingAtRun = plan.RemainingDays,
-                        SuccessProbability = (decimal)plan.SuccessProbability,
-                        Status = "Active",
-                        DailyCalendarJson = System.Text.Json.JsonSerializer.Serialize(plan, options)
-                    };
 
-                    context.InvestmentPlans?.Add(investmentPlan);
-                    await context.SaveChangesAsync(stoppingToken);
-                    _logService.AddLog($"[System] Cập nhật Kế hoạch đầu tư thành công từ dữ liệu DNSE đồng bộ! Xác suất mới: {plan.SuccessProbability}%");
+                    if (existingActivePlan != null && !isExpired)
+                    {
+                        // Cập nhật ghi đè lên bản ghi đang chạy để tránh tạo mới liên tục
+                        existingActivePlan.RunDate = DateTime.Now;
+                        existingActivePlan.StartDate = plan.StartDate == default ? planStartDate : plan.StartDate;
+                        existingActivePlan.EndDate = plan.EndDate == default ? DateTime.Today : plan.EndDate;
+                        existingActivePlan.Capital = pref.AmountPerTrade;
+                        existingActivePlan.TargetProfit = targetAmountToUse;
+                        existingActivePlan.ActualProfit = planPnL;
+                        existingActivePlan.RemainingProfitNeeded = remainingProfitNeeded;
+                        existingActivePlan.DaysRemainingAtRun = plan.RemainingDays;
+                        existingActivePlan.SuccessProbability = (decimal)plan.SuccessProbability;
+                        existingActivePlan.DailyCalendarJson = System.Text.Json.JsonSerializer.Serialize(plan, options);
+
+                        context.InvestmentPlans.Update(existingActivePlan);
+                        await context.SaveChangesAsync(stoppingToken);
+                        _logService.AddLog($"[System] Cập nhật ghi đè Kế hoạch đầu tư đang chạy (ID: {existingActivePlan.Id}) thành công! Xác suất mới: {plan.SuccessProbability}%");
+                    }
+                    else
+                    {
+                        // Tạo mới nếu chưa có hoặc cái cũ đã hết hạn
+                        var investmentPlan = new InvestmentPlan
+                        {
+                            RunDate = DateTime.Now,
+                            StartDate = plan.StartDate == default ? planStartDate : plan.StartDate,
+                            EndDate = plan.EndDate == default ? DateTime.Today : plan.EndDate,
+                            Capital = pref.AmountPerTrade,
+                            TargetProfit = targetAmountToUse,
+                            ActualProfit = planPnL,
+                            RemainingProfitNeeded = remainingProfitNeeded,
+                            DaysRemainingAtRun = plan.RemainingDays,
+                            SuccessProbability = (decimal)plan.SuccessProbability,
+                            Status = "Active",
+                            DailyCalendarJson = System.Text.Json.JsonSerializer.Serialize(plan, options)
+                        };
+
+                        context.InvestmentPlans?.Add(investmentPlan);
+                        await context.SaveChangesAsync(stoppingToken);
+                        _logService.AddLog($"[System] Tạo mới Kế hoạch đầu tư thành công từ dữ liệu DNSE đồng bộ! Xác suất mới: {plan.SuccessProbability}%");
+                    }
                 }
             }
             catch (Exception ex)

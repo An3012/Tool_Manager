@@ -157,17 +157,6 @@
                     </div>
 
                     <div class="row g-3">
-                        <div class="col-md-6">
-                            <label class="custom-label">Chốt lời (đ)</label>
-                            <input type="number" name="TakeProfitAmount" value="@((long)pref.TakeProfitAmount)" class="form-control custom-input" min="0" step="100000" />
-                        </div>
-                        <div class="col-md-6">
-                            <label class="custom-label">Cắt lỗ (đ)</label>
-                            <input type="number" name="StopLossAmount" value="@((long)pref.StopLossAmount)" class="form-control custom-input" min="0" step="100000" />
-                        </div>
-                    </div>
-
-                    <div class="row g-3">
                         <div class="col-md-12">
                             <label class="custom-label">Ngày bắt đầu kế hoạch</label>
                             <input type="date" name="PlanStartDate" value="@(pref.PlanStartDate?.ToString("yyyy-MM-dd") ?? DateTime.Now.ToString("yyyy-MM-dd"))" class="form-control custom-input" />
@@ -188,10 +177,11 @@
                         </select>
                     </div>
 
-                    <button type="submit" class="btn btn-gradient w-100 mt-2">Lưu cấu hình</button>
+                    <button type="submit" class="btn btn-gradient w-100 mt-2">💾 Thêm cấu hình mục tiêu mới</button>
                 </form>
             </div>
         </div>
+
 
         <div class="col-lg-5">
             <div class="glass-card h-100">
@@ -244,4 +234,121 @@
             </div>
         </div>
     </div>
+
+    <!-- Target Configurations Table -->
+    <div class="row g-4 mt-4">
+        <div class="col-12">
+            <div class="glass-card">
+                <h3 class="h5 mb-4 fw-bold text-white d-flex align-items-center gap-2">
+                    <span class="text-warning">📋</span> Danh sách cấu hình mục tiêu đầu tư
+                </h3>
+                <div class="table-responsive">
+                    <table class="table table-dark table-hover align-middle m-0" style="font-size: 0.85rem; border-color: rgba(255,255,255,0.05);">
+                        <thead>
+                            <tr class="text-secondary">
+                                <th>Phân tiền mỗi lệnh</th>
+                                <th>Mục tiêu lợi nhuận (Min cần đạt)</th>
+                                <th>Ngày bắt đầu</th>
+                                <th>Thời gian đầu tư</th>
+                                <th>Khẩu vị rủi ro</th>
+                                <th class="text-center" style="width: 280px;">Hành động</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @{
+                                var preferencesList = ViewBag.PreferencesList as List<UserPreference> ?? new List<UserPreference>();
+                            }
+                            @foreach (var p in preferencesList)
+                            {
+                                <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                    <td class="font-monospace text-white fw-bold">@p.AmountPerTrade.ToString("N0") đ</td>
+                                    <td class="font-monospace text-warning fw-bold">@p.TargetAmount.ToString("N0") đ</td>
+                                    <td>@(p.PlanStartDate?.ToString("dd/MM/yyyy") ?? "-")</td>
+                                    <td>@p.InvestmentHorizon</td>
+                                    <td>
+                                        @{
+                                            var badgeColor = p.RiskTolerance switch
+                                            {
+                                                "Low" => "bg-success",
+                                                "Medium" => "bg-warning text-dark",
+                                                "High" => "bg-danger",
+                                                _ => "bg-secondary"
+                                            };
+                                            var label = p.RiskTolerance switch
+                                            {
+                                                "Low" => "Thấp",
+                                                "Medium" => "Trung bình",
+                                                "High" => "Cao",
+                                                _ => p.RiskTolerance
+                                            };
+                                        }
+                                        <span class="badge @badgeColor">@label</span>
+                                    </td>
+                                    <td class="text-center">
+                                        <div class="d-flex gap-2 justify-content-center">
+                                            <form asp-action="RunPlanAnalysis" asp-controller="Copilot" method="post" class="m-0" onsubmit="showGlobalLoading()">
+                                                <input type="hidden" name="prefId" value="@p.Id" />
+                                                <button type="submit" class="btn btn-sm btn-primary px-3 py-1" style="font-size: 0.78rem; border-radius: 6px; background: linear-gradient(135deg, #8b5cf6 0%, #3b82f6 100%); border: none;">
+                                                    🧠 Chạy phân tích AI
+                                                </button>
+                                            </form>
+                                            <button type="button" onclick="deletePreference(@p.Id, this)" class="btn btn-sm btn-outline-danger px-3 py-1" style="font-size: 0.78rem; border-radius: 6px;">
+                                                🗑️ Xóa
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
+
+<!-- Modal Loading Overlay -->
+<div id="globalLoadingOverlay" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(9, 10, 15, 0.85); z-index: 9999; justify-content: center; align-items: center; flex-direction: column;">
+    <div class="spinner-border text-primary mb-3" style="width: 3rem; height: 3rem; color: #8b5cf6 !important;" role="status"></div>
+    <div class="text-white fw-bold" style="font-size: 1.1rem; letter-spacing: 0.05em;">🧠 AI đang phân tích dữ liệu & lập kế hoạch tối ưu...</div>
+    <div class="text-secondary small mt-2">Quá trình này có thể mất 10-15 giây, vui lòng không tắt trang.</div>
+</div>
+
+<script>
+function showGlobalLoading() {
+    document.getElementById('globalLoadingOverlay').style.display = 'flex';
+}
+
+function deletePreference(id, button) {
+    if (!confirm("Bạn có chắc chắn muốn xóa cấu hình mục tiêu này không?")) {
+        return;
+    }
+    
+    fetch('/Copilot/DeletePreference?id=' + id, {
+        method: 'POST'
+    })
+    .then(response => {
+        if (!response.ok) {
+            return response.json().then(data => { throw new Error(data.message || 'Không thể xóa cấu hình'); });
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.success) {
+            const row = button.closest('tr');
+            if (row) {
+                row.remove();
+            } else {
+                location.reload();
+            }
+        } else {
+            alert(data.message || 'Xóa thất bại.');
+        }
+    })
+    .catch(error => {
+        console.error(error);
+        alert('Lỗi: ' + error.message);
+    });
+}
+</script>
+
