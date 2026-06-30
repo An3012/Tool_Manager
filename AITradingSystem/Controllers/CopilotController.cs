@@ -105,9 +105,18 @@ namespace AITradingSystem.Controllers
             });
         }
 
-        // Dashboard chính - Chỉ hiện thị tín hiệu và biểu đồ chung
         public async Task<IActionResult> Index()
         {
+            // Cập nhật giá thật cho các mã trong nền (không chặn tải trang)
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await _simulationLogService.FetchRealPricesAsync(null);
+                }
+                catch { }
+            });
+
             var preference = await GetUserPreference();
             var strategies = await _context.TradingStrategies.ToListAsync();
             var stocks = GetDNSEStocks();
@@ -153,6 +162,16 @@ namespace AITradingSystem.Controllers
                                       .Concat(userTransactions.Select(t => t.Symbol))
                                       .Distinct()
                                       .ToList();
+
+            // Cập nhật giá thật cho các mã trong nền (không chặn tải trang)
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await _simulationLogService.FetchRealPricesAsync(allSymbols);
+                }
+                catch { }
+            });
 
             var positions = new List<TradePosition>();
             foreach (var symbol in allSymbols)
@@ -470,6 +489,13 @@ namespace AITradingSystem.Controllers
                                       .Concat(userTransactions.Select(t => t.Symbol))
                                       .Distinct()
                                       .ToList();
+
+            // Cập nhật giá thật cho các mã liên quan
+            try
+            {
+                await _simulationLogService.FetchRealPricesAsync(allSymbols);
+            }
+            catch { }
 
             var positions = new List<TradePosition>();
             foreach (var symbol in allSymbols)

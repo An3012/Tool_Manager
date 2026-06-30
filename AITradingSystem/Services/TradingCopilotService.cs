@@ -3,13 +3,13 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
-using Microsoft.SemanticKernel;
-using Microsoft.SemanticKernel.ChatCompletion;
-using AITradingSystem.Models;
-using AITradingSystem.Data;
 using AITradingSystem.Controllers;
+using AITradingSystem.Data;
+using AITradingSystem.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.SemanticKernel;
+using Microsoft.SemanticKernel.ChatCompletion;
 
 namespace AITradingSystem.Services
 {
@@ -27,7 +27,7 @@ namespace AITradingSystem.Services
             // Khởi tạo Semantic Kernel dùng Google Gemini hoặc OpenAI
             var apiKey = _configuration["AiConfig:ApiKey"] ?? "MOCK_KEY";
             var builder = Kernel.CreateBuilder();
-            
+
             // Mặc định đăng ký một Chat Completion Service (ví dụ OpenAI hoặc Gemini)
             // Trong thực tế sẽ gọi builder.AddOpenAIChatCompletion(...) hoặc AddGoogleGenAIChatCompletion(...)
             // Ở đây ta sẽ sử dụng mock hoặc fallback nếu ApiKey chưa được điền
@@ -93,8 +93,8 @@ namespace AITradingSystem.Services
                 .OrderByDescending(e => e.Timestamp)
                 .Take(5)
                 .ToListAsync();
-            
-            var memoryContext = pastLessons.Any() 
+
+            var memoryContext = pastLessons.Any()
                 ? string.Join("\n", pastLessons.Select(l => $"- Lệnh {l.ActionTaken} trước đây: Kết quả {l.Result}. Bài học rút ra: {l.LessonLearned}"))
                 : "Chưa có bài học kinh nghiệm nào được lưu trữ.";
 
@@ -103,10 +103,7 @@ namespace AITradingSystem.Services
 
             // 5. Xây dựng Prompt gửi cho AI
             var prompt = $@"
-Bạn là AI Trading Copilot chuyên nghiệp tối ưu riêng cho thị trường chứng khoán Việt Nam.
-Nhiệm vụ của bạn là đưa ra tín hiệu cố vấn giao dịch (MUA, BÁN, hoặc THEO DÕI) dựa trên bối cảnh thị trường, mục tiêu của người dùng, thư viện chiến lược (Knowledge) và các bài học kinh nghiệm trong quá khứ (Memory).
-
-[MỤC TIÊU CỦA NGƯỜI DÙNG]
+Bạn là AI Trading Copilot chuyên nghiệp tối ưu riêng cho thị trường chứng khoán Việt Nam.Nhiệm vụ của bạn là đưa ra tín hiệu cố vấn giao dịch (MUA, BÁN, hoặc THEO DÕI) dựa trên bối cảnh thị trường, mục tiêu của người dùng, thư viện chiến lược (Knowledge) và các bài học kinh nghiệm trong quá khứ (Memory).[MỤC TIÊU CỦA NGƯỜI DÙNG]
 - Thời gian đầu tư: {pref.InvestmentHorizon}
 - Số tiền đầu tư tối đa mỗi mã: {pref.AmountPerTrade:N0} VND
 - Mục tiêu lợi nhuận (đ): {pref.TargetAmount:N0}
@@ -126,11 +123,7 @@ Nhiệm vụ của bạn là đưa ra tín hiệu cố vấn giao dịch (MUA, B
 
 YÊU CẦU ĐẶC BIỆT:
 Nếu người dùng đã đặt mục tiêu chốt lời hoặc cắt lỗ riêng biệt cho mã {symbol} ở trên, bạn phải ưu tiên phân tích so với các mốc giá này:
-1. Nếu giá hiện tại đạt hoặc vượt mốc chốt lời, đề xuất hành động phải là BÁN (SELL) với lý do chốt lời bảo vệ thành quả.
-2. Nếu giá hiện tại chạm hoặc giảm dưới mốc cắt lỗ, đề xuất hành động phải là BÁN (SELL) với lý do cắt lỗ quản trị rủi ro.
-3. Nếu chưa chạm các mốc mục tiêu riêng biệt đặt ra, hãy kết hợp chỉ báo kỹ thuật để đưa ra tín hiệu MUA (BUY) hoặc THEO DÕI (HOLD).
-
-Vui lòng trả về kết quả dưới định dạng JSON như sau:
+1. Nếu giá hiện tại đạt hoặc vượt mốc chốt lời, đề xuất hành động phải là BÁN (SELL) với lý do chốt lời bảo vệ thành quả.2. Nếu giá hiện tại chạm hoặc giảm dưới mốc cắt lỗ, đề xuất hành động phải là BÁN (SELL) với lý do cắt lỗ quản trị rủi ro.3. Nếu chưa chạm các mốc mục tiêu riêng biệt đặt ra, hãy kết hợp chỉ báo kỹ thuật để đưa ra tín hiệu MUA (BUY) hoặc THEO DÕI (HOLD).Vui lòng trả về kết quả dưới định dạng JSON như sau:
 {{
   ""Action"": ""BUY/SELL/HOLD"",
   ""StrategyApplied"": ""Tên chiến lược áp dụng"",
@@ -254,7 +247,7 @@ Vui lòng trả về kết quả dưới định dạng JSON như sau:
                 rationale = $"Bối cảnh thị trường {marketTrend} rất phù hợp để áp dụng chiến lược RSI vùng quá bán. " +
                             $"Mã {symbol} có RSI đạt {rsi} (dưới 35). " +
                             $"Khối lượng phân bổ khuyến nghị tương ứng vốn {pref.AmountPerTrade:N0} đ.";
-                
+
                 if (hasRsiWarning)
                 {
                     rationale += " Lưu ý từ bài học quá khứ: Tránh mua đuổi nếu giá chưa có tín hiệu rút chân phục hồi.";
@@ -310,7 +303,7 @@ Vui lòng trả về kết quả dưới định dạng JSON như sau:
         public async Task<GlobalPortfolioPlanResult> GenerateGlobalPortfolioPlanAsync(List<TradePosition> positions, UserPreference pref, List<StockViewModel> stocks, decimal cumulativePnL, decimal totalTargetAmount)
         {
             DateTime startDate = pref.PlanStartDate ?? DateTime.Today;
-            
+
             // Lấy số ngày kế hoạch từ InvestmentHorizon
             int totalDays = 30;
             if (!string.IsNullOrEmpty(pref.InvestmentHorizon))
@@ -318,13 +311,24 @@ Vui lòng trả về kết quả dưới định dạng JSON như sau:
                 var match = System.Text.RegularExpressions.Regex.Match(pref.InvestmentHorizon, @"\d+");
                 if (match.Success) int.TryParse(match.Value, out totalDays);
             }
-            
+
             DateTime endDate = startDate.AddDays(totalDays);
             int remainingDays = (endDate.Date - DateTime.Today.Date).Days;
             if (remainingDays < 0) remainingDays = 0;
-            
+
             decimal targetAmountToUse = pref.TargetAmount;
             decimal remainingAmountTotal = Math.Max(0m, targetAmountToUse - cumulativePnL);
+
+            decimal allocatedBudget = 0;
+            foreach (var pos in positions)
+            {
+                var currentPrice = stocks.FirstOrDefault(s => s.Symbol == pos.Symbol)?.CurrentPrice ?? pos.EntryPrice;
+                var investedAmount = pos.InvestedAmount.HasValue && pos.InvestedAmount.Value > 0
+                    ? pos.InvestedAmount.Value
+                    : pos.EntryPrice * pos.Quantity;
+                allocatedBudget += investedAmount;
+            }
+            decimal remainingOtherBudget = Math.Max(0m, pref.AmountPerTrade - allocatedBudget);
 
             // Bối cảnh vị thế đang mở
             var positionsContext = positions.Any()
@@ -342,6 +346,8 @@ Nhiệm vụ của bạn là lập một KẾ HOẠCH TỐI ƯU HÓA DANH MỤC 
 - Ngày bắt đầu kế hoạch: {startDate:dd/MM/yyyy}
 - Số ngày kế hoạch: {totalDays} ngày (Ngày kết thúc: {endDate:dd/MM/yyyy}, Số ngày còn lại từ hôm nay: {remainingDays} ngày)
 - Vốn đầu tư mỗi lệnh: {pref.AmountPerTrade:N0} đ
+- Vốn đã phân bổ giải ngân: {allocatedBudget:N0} đ
+- Vốn khả dụng còn lại (Sức mua còn lại): {remainingOtherBudget:N0} đ
 - Mục tiêu lợi nhuận tổng thể: {targetAmountToUse:N0} đ
 - Lợi nhuận lũy kế hiện tại (đã bán + đang mở): {cumulativePnL:N0} đ
 
@@ -351,10 +357,55 @@ Nhiệm vụ của bạn là lập một KẾ HOẠCH TỐI ƯU HÓA DANH MỤC 
 [GIÁ THỊ TRƯỜNG HIỆN TẠI VÀ CHỈ BÁO KỸ THUẬT]
 {stocksContext}
 
-YÊU CẦU LẬP KẾ HOẠCH:
-1. Đánh giá xác suất thành công (%) để đạt được mục tiêu lợi nhuận tổng thể còn thiếu ({remainingAmountTotal:N0} đ) trong {remainingDays} ngày còn lại.
-2. Đề xuất các hành động cụ thể cho từng mã cổ phiếu (MUA, BÁN, NẮM GIỮ, CHUYỂN VỐN) để tối ưu hóa tỷ trọng rủi ro/lợi nhuận.
-3. Lập một LỊCH TRÌNH HOẠT ĐỘNG TỪNG NGÀY (Daily Action Calendar) từ hôm nay ({DateTime.Today:dd/MM/yyyy}) đến ngày kết thúc ({endDate:dd/MM/yyyy}) chỉ ra rõ ngày nào nên làm gì đối với các mã trong danh mục.
+### YÊU CẦU LẬP KẾ HOẠCH & HẠN CHẾ SỨC MUA
+
+1. **Đánh giá xác suất thành công (%)** để đạt được mục tiêu lợi nhuận tổng thể còn thiếu (**{remainingAmountTotal:N0} đ**) trong **{remainingDays}** ngày còn lại. Đánh giá cần dựa trên tình trạng hiện tại của danh mục, diễn biến thị trường, mức độ biến động của từng cổ phiếu, tiến độ đạt mục tiêu và các yếu tố rủi ro có thể ảnh hưởng đến kết quả.
+
+2. **Đề xuất hành động cụ thể cho từng mã cổ phiếu** trong danh mục, bao gồm các hành động **MUA, MUA THÊM, BÁN, NẮM GIỮ (HOLD) hoặc CHUYỂN VỐN**, nhằm tối ưu hóa tỷ trọng rủi ro/lợi nhuận của toàn bộ danh mục. Mỗi đề xuất cần nêu rõ lý do, mức độ ưu tiên và tác động kỳ vọng đến mục tiêu lợi nhuận chung.
+
+3. **HẠN CHẾ SỨC MUA:** Mọi đề xuất **MUA** hoặc **MUA THÊM** phải tuân thủ tuyệt đối giới hạn vốn khả dụng còn lại của người dùng là **{remainingOtherBudget:N0} đ**.
+
+   * Tổng giá trị giải ngân của tất cả các lệnh mua được đề xuất **không được vượt quá {remainingOtherBudget:N0} đ**.
+   * AI phải **tự động tính toán và đề xuất số lượng cổ phiếu phù hợp cho từng giao dịch**, dựa trên các yếu tố như: giá hiện tại, số vốn khả dụng, tỷ trọng danh mục, mục tiêu lợi nhuận, mức độ rủi ro, thanh khoản, mức độ tin cậy của cơ hội đầu tư và hiệu quả sử dụng vốn.
+   * **Không được áp dụng số lượng cố định hoặc bất kỳ quy tắc cứng nào** (ví dụ: luôn mua 100, 200, 500 hoặc bội số của 100 cổ phiếu). AI cần chủ động lựa chọn số lượng giao dịch tối ưu theo từng trường hợp cụ thể, đồng thời tuân thủ các quy định giao dịch của thị trường (nếu có).
+   * AI cần ưu tiên sử dụng nguồn vốn một cách hiệu quả, tránh để vốn nhàn rỗi quá lớn nhưng cũng không giải ngân vượt quá mức rủi ro hợp lý.
+   * Nếu số vốn khả dụng còn lại không đủ để thực hiện một giao dịch mua hợp lệ theo quy định của thị trường hoặc không đủ để tạo ra một giao dịch có ý nghĩa về mặt đầu tư, AI **không được khuyến nghị MUA hoặc MUA THÊM**, mà phải đề xuất **THEO DÕI (HOLD)** hoặc **BÁN/CHUYỂN VỐN** để cơ cấu lại danh mục trước khi xem xét giải ngân.
+
+4. **Lập LỊCH TRÌNH HOẠT ĐỘNG HẰNG NGÀY (Daily Action Calendar)** từ hôm nay (**{DateTime.Today:dd/MM/yyyy}**) đến ngày kết thúc (**{endDate:dd/MM/yyyy}**).
+
+   Lịch trình cần chỉ rõ:
+   * Ngày thực hiện.
+   * Mã cổ phiếu liên quan.
+   * Hành động được đề xuất (MUA, MUA THÊM, BÁN, HOLD hoặc CHUYỂN VỐN).
+   * Điều kiện kích hoạt hành động (ví dụ: giá đạt ngưỡng, khối lượng tăng, tín hiệu kỹ thuật xuất hiện...).
+   * Mục tiêu kỳ vọng sau khi thực hiện hành động.
+   * Mức độ ưu tiên của từng hành động nếu có nhiều giao dịch trong cùng một ngày.
+
+5. **Yêu cầu tối ưu hóa danh mục tổng thể**
+
+   AI không được đánh giá từng mã một cách độc lập mà phải tối ưu trên toàn bộ danh mục đầu tư. Mỗi quyết định mua, bán hoặc giữ cần xem xét đồng thời các yếu tố sau:
+   * Khả năng hoàn thành mục tiêu lợi nhuận tổng thể.
+   * Phân bổ tỷ trọng vốn hợp lý giữa các mã.
+   * Mức độ rủi ro của từng vị thế và của toàn danh mục.
+   * Tính thanh khoản của cổ phiếu.
+   * Khả năng xoay vòng vốn để tận dụng các cơ hội có xác suất thành công cao hơn.
+   * Chi phí giao dịch, thuế và ảnh hưởng đến lợi nhuận thực tế.
+   * Tương quan giữa các mã nhằm tránh tập trung rủi ro vào cùng một nhóm ngành hoặc cùng xu hướng thị trường.
+
+6. **Yêu cầu giải thích quyết định**
+
+   Với mỗi khuyến nghị, AI cần giải thích ngắn gọn nhưng rõ ràng:
+   * Vì sao lựa chọn hành động đó.
+   * Vì sao lựa chọn số lượng cổ phiếu như đề xuất.
+   * Ảnh hưởng của quyết định đến mục tiêu lợi nhuận và mức độ rủi ro của danh mục.
+   * Những điều kiện có thể khiến khuyến nghị cần thay đổi trong các ngày tiếp theo.
+
+7. **Nguyên tắc bắt buộc**
+
+   * Không đề xuất bất kỳ giao dịch nào vượt quá số vốn khả dụng.
+   * Không giả định người dùng có thể bổ sung thêm vốn nếu không được cung cấp thông tin.
+   * Không sử dụng các quy tắc cố định về số lượng cổ phiếu; AI phải tự tính toán và tối ưu theo từng tình huống cụ thể.
+   * Ưu tiên tối đa hóa xác suất hoàn thành mục tiêu lợi nhuận trong khi vẫn kiểm soát rủi ro của toàn bộ danh mục.
 
 Vui lòng trả về kết quả dưới định dạng JSON khớp chính xác với lớp GlobalPortfolioPlanResult như sau:
 {{
@@ -444,7 +495,7 @@ Vui lòng trả về kết quả dưới định dạng JSON khớp chính xác 
                     double daysRatio = (double)remainingDays / (totalDays > 0 ? totalDays : 30);
                     decimal progressWeight = Math.Clamp(targetProgress, 0, 100);
                     successProbability = Math.Clamp(progressWeight + (decimal)(daysRatio * 40.0), 10, 95);
-                    
+
                     int winningPositions = positions.Count(p => p.PnL > 0);
                     int totalPositions = positions.Count;
                     if (totalPositions > 0)
@@ -466,10 +517,10 @@ Vui lòng trả về kết quả dưới định dạng JSON khớp chính xác 
                 decimal targetPrice = pos.TakeProfitPrice ?? (pos.EntryPrice * (1 + (pref.TargetProfitPercentage > 0 ? pref.TargetProfitPercentage / 100m : 0.15m)));
                 decimal stopLossPrice = pos.StopLossPrice ?? (pos.EntryPrice * (1 - (pref.MaxLossPercentage > 0 ? pref.MaxLossPercentage / 100m : 0.07m)));
                 decimal expectedProfit = pos.Quantity * Math.Max(0, targetPrice - pos.EntryPrice);
-                
+
                 string actionStr = "NẮM GIỮ";
                 string descStr = "";
-                
+
                 if (currentPrice >= targetPrice)
                 {
                     actionStr = "BÁN (CHỐT LỜI)";
@@ -509,7 +560,7 @@ Vui lòng trả về kết quả dưới định dạng JSON khớp chính xác 
                 calendarDays.Add(currentDay);
                 currentDay = currentDay.AddDays(1);
             }
-            
+
             // AI tự động đánh giá và chọn lọc các mã tiềm năng dựa trên tín hiệu AI (AiSignal), chỉ số RSI và xu hướng giá
             var evaluatedCandidates = stocks
                 .Where(s => s.Rsi >= 30 && s.Rsi <= 70)
@@ -545,6 +596,25 @@ Vui lòng trả về kết quả dưới định dạng JSON khớp chính xác 
                 }
             }
 
+            decimal allocatedBudget = 0;
+            foreach (var pos in positions)
+            {
+                var currentPrice = stocks.FirstOrDefault(s => s.Symbol == pos.Symbol)?.CurrentPrice ?? pos.EntryPrice;
+                var investedAmount = pos.InvestedAmount.HasValue && pos.InvestedAmount.Value > 0
+                    ? pos.InvestedAmount.Value
+                    : pos.EntryPrice * pos.Quantity;
+                allocatedBudget += investedAmount;
+            }
+            decimal remainingOtherBudget = Math.Max(0m, pref.AmountPerTrade - allocatedBudget);
+            decimal simulatedRemainingBudget = remainingOtherBudget;
+
+            // Lưu trữ trạng thái nắm giữ động của từng mã để truyền qua các ngày
+            var symbolHoldings = new Dictionary<string, int>();
+            foreach (var pos in positions)
+            {
+                symbolHoldings[pos.Symbol] = pos.Quantity;
+            }
+
             int totalBusinessDays = calendarDays.Count(d => d.DayOfWeek != DayOfWeek.Saturday && d.DayOfWeek != DayOfWeek.Sunday);
             int sellCyclesCount = Math.Max(1, totalBusinessDays / 4); // Cứ mỗi 4 ngày giao dịch có 1 nhịp chốt lời xoay vòng
             decimal profitPerCycle = Math.Round(targetAmountToUse / sellCyclesCount / 1000m) * 1000m;
@@ -556,7 +626,7 @@ Vui lòng trả về kết quả dưới định dạng JSON khớp chính xác 
                 string actionType = "GIỮ";
                 string description = "";
                 string target = "-";
-                
+
                 if (date.DayOfWeek == DayOfWeek.Saturday || date.DayOfWeek == DayOfWeek.Sunday)
                 {
                     actionType = "SÀN ĐÓNG CỬA";
@@ -568,70 +638,153 @@ Vui lòng trả về kết quả dưới định dạng JSON khớp chính xác 
                     int cycleStep = (businessDayIndex - 1) % 4; // 0 = MUA, 1 = THEO DÕI/MUA GIA TĂNG, 2 = GỒNG LÃI/QUẢN TRỊ, 3 = BÁN CHỐT LỜI XOAY VÒNG
                     int stockIndex = ((businessDayIndex - 1) / 4) % candidateStocks.Count;
                     string symbol = candidateStocks[stockIndex];
-                    
+
                     var stockInfo = stocks.FirstOrDefault(s => s.Symbol == symbol);
                     decimal currentPrice = stockInfo?.CurrentPrice ?? 30000m;
                     if (currentPrice <= 0) currentPrice = 30000m;
 
-                    // Kiểm tra xem người dùng có vị thế nắm giữ thực tế cho mã này hay không
-                    var existingPos = positions.FirstOrDefault(p => p.Symbol == symbol);
-                    int qty = 0;
-                    if (existingPos != null)
-                    {
-                        qty = existingPos.Quantity;
-                    }
-                    else
-                    {
-                        qty = (int)(pref.AmountPerTrade / currentPrice / 100) * 100;
-                        if (qty == 0) qty = 100;
-                    }
+                    int currentQtyHeld = symbolHoldings.ContainsKey(symbol) ? symbolHoldings[symbol] : 0;
 
-                    // Khối lượng mua thêm (dựa trên vốn cài đặt mỗi lệnh)
-                    int buyMoreQty = (int)(pref.AmountPerTrade / currentPrice / 100) * 100;
-                    if (buyMoreQty == 0) buyMoreQty = 100;
+                    // Khởi tạo bộ sinh số ngẫu nhiên mô phỏng quyết định AI
+                    var rand = new Random(businessDayIndex + symbol.GetHashCode());
+                    double allocationPct = 0.5; // Mặc định giải ngân 50% vốn mỗi lệnh
+                    if (stockInfo != null)
+                    {
+                        if (stockInfo.Rsi < 40)
+                            allocationPct = 0.8; // Quá bán -> mua mạnh
+                        else if (stockInfo.Rsi > 60)
+                            allocationPct = 0.3; // Quá mua nhẹ -> mua phòng thủ
+                    }
+                    allocationPct += (rand.NextDouble() * 0.2 - 0.1); // Biến động +/- 10% mô phỏng AI tối ưu
+                    allocationPct = Math.Clamp(allocationPct, 0.2, 0.9);
 
-                    int totalQtyHeld = existingPos != null ? (qty + buyMoreQty) : (qty + buyMoreQty);
+                    decimal targetBudget = pref.AmountPerTrade * (decimal)allocationPct;
+                    int qty = (int)(targetBudget / currentPrice / 10) * 10;
+                    if (qty == 0) qty = 10;
+
+                    // Khối lượng mua thêm (mô phỏng AI gom hàng từng phần)
+                    double addAllocationPct = 0.3; // Mặc định mua thêm 30%
+                    if (stockInfo != null)
+                    {
+                        if (stockInfo.Rsi < 40)
+                            addAllocationPct = 0.5;
+                        else if (stockInfo.Rsi > 60)
+                            addAllocationPct = 0.15;
+                    }
+                    addAllocationPct += (rand.NextDouble() * 0.1 - 0.05); // Biến động +/- 5%
+                    addAllocationPct = Math.Clamp(addAllocationPct, 0.1, 0.6);
+
+                    decimal addBudget = pref.AmountPerTrade * (decimal)addAllocationPct;
+                    int buyMoreQty = (int)(addBudget / currentPrice / 10) * 10;
+                    if (buyMoreQty == 0) buyMoreQty = 10;
 
                     if (cycleStep == 0)
                     {
-                        if (existingPos != null)
+                        if (currentQtyHeld > 0)
                         {
+                            var existingPos = positions.FirstOrDefault(p => p.Symbol == symbol);
+                            decimal entryPrice = existingPos?.EntryPrice ?? currentPrice;
                             actionType = "GIỮ";
-                            description = $"Nắm giữ vị thế thực tế hiện tại của **{symbol}** (Khối lượng đang có: **{qty:N0} CP**, giá vốn trung bình: **{existingPos.EntryPrice:N0} đ**). Tiếp tục gồng lãi hướng tới kháng cự.";
-                            target = $"Giữ {qty:N0} CP {symbol}";
+                            description = $"Nắm giữ vị thế thực tế hiện tại của **{symbol}** (Khối lượng đang có: **{currentQtyHeld:N0} CP**, giá vốn trung bình: **{entryPrice:N0} đ**). Tiếp tục gồng lãi hướng tới kháng cự.";
+                            target = $"Giữ {currentQtyHeld:N0} CP {symbol}";
                         }
                         else
                         {
-                            var buyMin = Math.Round(currentPrice * 0.985m / 100m) * 100m;
-                            var buyMax = Math.Round(currentPrice * 1.005m / 100m) * 100m;
-                            actionType = "MUA";
-                            description = $"Giải ngân mua mới **{symbol}**. Đề xuất số lượng đặt lệnh: **{qty:N0} CP**, giá mua tích lũy vùng: **{buyMin:N0} - {buyMax:N0} đ** (khuyến nghị rải lệnh nhịp rung lắc).";
-                            target = $"Mua {qty:N0} CP {symbol} giá {buyMax:N0} đ";
+                            // Điều chỉnh số lượng mua dựa trên sức mua còn lại
+                            decimal cost = qty * currentPrice;
+                            if (simulatedRemainingBudget < cost)
+                            {
+                                qty = (int)(simulatedRemainingBudget / currentPrice / 10) * 10;
+                            }
+
+                            if (qty >= 10)
+                            {
+                                var buyMin = Math.Round(currentPrice * 0.985m / 100m) * 100m;
+                                var buyMax = Math.Round(currentPrice * 1.005m / 100m) * 100m;
+                                actionType = "MUA";
+                                description = $"Giải ngân mua mới **{symbol}**. Đề xuất số lượng đặt lệnh: **{qty:N0} CP**, giá mua tích lũy vùng: **{buyMin:N0} - {buyMax:N0} đ** (khuyến nghị rải lệnh nhịp rung lắc). Sức mua khả dụng còn lại: {simulatedRemainingBudget - (qty * currentPrice):N0} đ.";
+                                target = $"Mua {qty:N0} CP {symbol} giá {buyMax:N0} đ";
+                                simulatedRemainingBudget -= qty * currentPrice;
+                                symbolHoldings[symbol] = qty;
+                            }
+                            else
+                            {
+                                actionType = "THEO DÕI";
+                                description = $"Theo dõi mã **{symbol}**. Do sức mua khả dụng còn lại ({simulatedRemainingBudget:N0} đ) thấp hơn số tiền tối thiểu để đặt lệnh 10 CP ({10 * currentPrice:N0} đ), không khuyến nghị giải ngân mới.";
+                                target = $"Theo dõi {symbol}";
+                            }
                         }
                     }
                     else if (cycleStep == 1)
                     {
-                        var addPriceMin = Math.Round(currentPrice * 0.98m / 100m) * 100m;
-                        var addPriceMax = Math.Round(currentPrice * 0.995m / 100m) * 100m;
-                        actionType = "MUA THÊM";
-                        description = $"Gia tăng tỷ trọng **{symbol}**. Đề xuất mua thêm: **{buyMoreQty:N0} CP**, giá gom vùng: **{addPriceMin:N0} - {addPriceMax:N0} đ** khi kiểm thử thành công hỗ trợ kỹ thuật.";
-                        target = $"Mua thêm {buyMoreQty:N0} CP {symbol} giá {addPriceMax:N0} đ";
+                        if (currentQtyHeld == 0)
+                        {
+                            actionType = "THEO DÕI";
+                            description = $"Theo dõi sát diễn biến giao dịch của mã **{symbol}** để tìm điểm giải ngân tối ưu khi thị trường thuận lợi.";
+                            target = $"Theo dõi {symbol}";
+                        }
+                        else
+                        {
+                            // Điều chỉnh số lượng mua thêm dựa trên sức mua còn lại
+                            decimal cost = buyMoreQty * currentPrice;
+                            if (simulatedRemainingBudget < cost)
+                            {
+                                buyMoreQty = (int)(simulatedRemainingBudget / currentPrice / 10) * 10;
+                            }
+
+                            if (buyMoreQty >= 10)
+                            {
+                                var addPriceMin = Math.Round(currentPrice * 0.98m / 100m) * 100m;
+                                var addPriceMax = Math.Round(currentPrice * 0.995m / 100m) * 100m;
+                                actionType = "MUA THÊM";
+                                description = $"Gia tăng tỷ trọng **{symbol}**. Đề xuất mua thêm: **{buyMoreQty:N0} CP**, giá gom vùng: **{addPriceMin:N0} - {addPriceMax:N0} đ** khi hỗ trợ kỹ thuật được giữ vững. Sức mua khả dụng còn lại: {simulatedRemainingBudget - (buyMoreQty * currentPrice):N0} đ.";
+                                target = $"Mua thêm {buyMoreQty:N0} CP {symbol} giá {addPriceMax:N0} đ";
+                                simulatedRemainingBudget -= buyMoreQty * currentPrice;
+                                symbolHoldings[symbol] = currentQtyHeld + buyMoreQty;
+                            }
+                            else
+                            {
+                                actionType = "GIỮ";
+                                description = $"Tiếp tục nắm giữ vị thế hiện tại của **{symbol}** (Khối lượng: **{currentQtyHeld:N0} CP**). Do sức mua khả dụng còn lại ({simulatedRemainingBudget:N0} đ) thấp hơn số tiền tối thiểu để mua thêm 10 CP ({10 * currentPrice:N0} đ), đề xuất tiếp tục nắm giữ theo dõi thay vì mua gia tăng.";
+                                target = $"Giữ {currentQtyHeld:N0} CP {symbol}";
+                            }
+                        }
                     }
                     else if (cycleStep == 2)
                     {
-                        var stopLossPrice = Math.Round(currentPrice * (1 - (pref.MaxLossPercentage > 0 ? pref.MaxLossPercentage / 100m : 0.07m)) / 100m) * 100m;
-                        actionType = "GIỮ";
-                        description = $"Tiếp tục nắm giữ **{symbol}** (Tổng khối lượng sau gia tăng: **{totalQtyHeld:N0} CP**). Đặt mốc cắt lỗ (Stop-loss) tại giá **{stopLossPrice:N0} đ** để bảo vệ vị thế.";
-                        target = $"Giữ {totalQtyHeld:N0} CP {symbol} (SL: {stopLossPrice:N0} đ)";
+                        if (currentQtyHeld > 0)
+                        {
+                            var stopLossPrice = Math.Round(currentPrice * (1 - (pref.MaxLossPercentage > 0 ? pref.MaxLossPercentage / 100m : 0.07m)) / 100m) * 100m;
+                            actionType = "GIỮ";
+                            description = $"Tiếp tục nắm giữ **{symbol}** (Tổng khối lượng: **{currentQtyHeld:N0} CP**). Đặt mốc cắt lỗ (Stop-loss) tại giá **{stopLossPrice:N0} đ** để bảo vệ vị thế.";
+                            target = $"Giữ {currentQtyHeld:N0} CP {symbol} (SL: {stopLossPrice:N0} đ)";
+                        }
+                        else
+                        {
+                            actionType = "THEO DÕI";
+                            description = $"Tiếp tục theo dõi biến động giá của **{symbol}** trong vùng tích lũy.";
+                            target = $"Theo dõi {symbol}";
+                        }
                     }
                     else // cycleStep == 3
                     {
-                        var sellMin = Math.Round(currentPrice * 1.035m / 100m) * 100m;
-                        var sellMax = Math.Round(currentPrice * 1.05m / 100m) * 100m;
-                        actionType = "BÁN";
-                        currentProjectedPnL += profitPerCycle;
-                        description = $"Bán chốt lời xoay vòng toàn bộ vị thế **{symbol}** (**{totalQtyHeld:N0} CP**). Giá bán chốt lời đề xuất vùng: **{sellMin:N0} - {sellMax:N0} đ**, chốt lời ngắn hạn: **+{profitPerCycle:N0} đ**.";
-                        target = $"Bán {totalQtyHeld:N0} CP {symbol} giá {sellMin:N0} đ";
+                        if (currentQtyHeld > 0)
+                        {
+                            var sellMin = Math.Round(currentPrice * 1.035m / 100m) * 100m;
+                            var sellMax = Math.Round(currentPrice * 1.05m / 100m) * 100m;
+                            actionType = "BÁN";
+                            currentProjectedPnL += profitPerCycle;
+                            description = $"Bán chốt lời xoay vòng toàn bộ vị thế **{symbol}** (**{currentQtyHeld:N0} CP**). Giá bán chốt lời đề xuất vùng: **{sellMin:N0} - {sellMax:N0} đ**, chốt lời ngắn hạn: **+{profitPerCycle:N0} đ**. Thu hồi sức mua: +{currentQtyHeld * currentPrice:N0} đ.";
+                            target = $"Bán {currentQtyHeld:N0} CP {symbol} giá {sellMin:N0} đ";
+                            simulatedRemainingBudget += currentQtyHeld * currentPrice;
+                            symbolHoldings[symbol] = 0;
+                        }
+                        else
+                        {
+                            actionType = "THEO DÕI";
+                            description = $"Theo dõi sát nhịp hồi phục kỹ thuật của mã **{symbol}**.";
+                            target = $"Theo dõi {symbol}";
+                        }
                     }
                 }
 

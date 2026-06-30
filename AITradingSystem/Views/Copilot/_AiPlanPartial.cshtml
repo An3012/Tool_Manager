@@ -2,7 +2,43 @@
 @{
     var globalPlan = ViewBag.GlobalPlan as AITradingSystem.Services.GlobalPortfolioPlanResult;
     var pref = ViewBag.Preference as UserPreference ?? new UserPreference();
+
+    // Helper functions to convert stock symbol to DNSE chart link
+    string FormatDescription(string desc)
+    {
+        if (string.IsNullOrEmpty(desc)) return "";
+        
+        // Match **SYMBOL** (e.g. **HPG**) and wrap with a link
+        string formatted = System.Text.RegularExpressions.Regex.Replace(desc, @"\*\*([A-Z0-9]{3,5})\*\*", 
+            m => $"<a href=\"https://banggia.dnse.com.vn/v2?symbol={m.Groups[1].Value}\" target=\"_blank\" class=\"stock-link-accent\">{m.Groups[1].Value}</a>");
+        
+        // Then, match any remaining **text** to bold
+        formatted = System.Text.RegularExpressions.Regex.Replace(formatted, @"\*\*(.*?)\*\*", "<strong>$1</strong>");
+        return formatted;
+    }
+
+    string FormatTarget(string target)
+    {
+        if (string.IsNullOrEmpty(target)) return "";
+        // Match ticker symbol like HPG, SSI in the target text (e.g. "Mua 3,600 CP HPG...")
+        string formatted = System.Text.RegularExpressions.Regex.Replace(target, @"\b([A-Z0-9]{3,5})\b", 
+            m => $"<a href=\"https://banggia.dnse.com.vn/v2?symbol={m.Groups[1].Value}\" target=\"_blank\" class=\"stock-link-accent\">{m.Groups[1].Value}</a>");
+        return formatted;
+    }
 }
+
+<style>
+    .stock-link-accent {
+        color: #06b6d4 !important; /* Cyan accent */
+        font-weight: bold;
+        text-decoration: none;
+        transition: all 0.2s ease;
+    }
+    .stock-link-accent:hover {
+        color: #a78bfa !important; /* Purple hover */
+        text-decoration: underline !important;
+    }
+</style>
 
 @if (ViewBag.PlanStatus == "Pending")
 {

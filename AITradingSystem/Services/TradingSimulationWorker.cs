@@ -8,6 +8,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using AITradingSystem.Data;
 using AITradingSystem.Models;
+using AITradingSystem.Controllers;
 using Microsoft.EntityFrameworkCore;
 
 namespace AITradingSystem.Services
@@ -18,6 +19,7 @@ namespace AITradingSystem.Services
         private readonly SimulationLogService _logService;
         private readonly ILogger<TradingSimulationWorker> _logger;
         private readonly Random _random = new();
+        private DateTime _lastDnseSyncAndPlanUpdate = DateTime.MinValue;
 
         public TradingSimulationWorker(
             IServiceProvider serviceProvider,
@@ -45,6 +47,10 @@ namespace AITradingSystem.Services
                         var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
                         var copilotService = scope.ServiceProvider.GetRequiredService<TradingCopilotService>();
                         var reflectionService = scope.ServiceProvider.GetRequiredService<ReflectionService>();
+                        var dnseService = scope.ServiceProvider.GetRequiredService<DnseService>();
+
+                        // Đồng bộ DNSE xong lấy dữ liệu lập kế hoạch luôn (định kỳ mỗi 1h)
+                        await AutoSyncDnseAndUpdatePlanAsync(context, dnseService, copilotService, stoppingToken);
 
                         // 1. Tìm danh sách các mã cổ phiếu người dùng đã/đang đầu tư
                         var investedSymbols = await context.TradePositions
@@ -272,6 +278,167 @@ namespace AITradingSystem.Services
             }
 
             _logService.AddLog("[System] Dịch vụ tự học ngầm đã dừng.");
+        }
+
+        private async Task AutoSyncDnseAndUpdatePlanAsync(AppDbContext context, DnseService dnseService, TradingCopilotService copilotService, CancellationToken stoppingToken)
+        {
+            if (_lastDnseSyncAndPlanUpdate != DateTime.MinValue && (DateTime.Now - _lastDnseSyncAndPlanUpdate).TotalHours < 1)
+            {
+                return;
+            }
+
+            _logService.AddLog("[System] Khởi chạy đồng bộ tài khoản DNSE & cập nhật kế hoạch định kỳ (mỗi 1h)...");
+            try
+            {
+                // 1. Đồng bộ tài khoản DNSE
+                try
+                {
+                    bool success = await dnseService.SyncPortfolioAsync();
+                    if (success)
+                    {
+                        _logService.AddLog("[System] Đồng bộ tài khoản DNSE thành công.");
+                    }
+                    else
+                    {
+                        _logService.AddLog("[System] Đồng bộ tài khoản DNSE hoàn tất với trạng thái mô phỏng/không đổi.");
+                    }
+                }
+                catch (Exception dnseEx)
+                {
+                    _logger.LogError(dnseEx, "Lỗi đồng bộ DNSE định kỳ.");
+                    _logService.AddLog($"[Error] Lỗi đồng bộ DNSE: {dnseEx.Message}");
+                }
+
+                // 2. Lấy dữ liệu mới nhất từ DB vừa đồng bộ để lập kế hoạch luôn
+                var dbPositions = await context.TradePositions.ToListAsync(cancellationToken: stoppingToken);
+                var userTransactions = await context.StockTransactions.Where(t => t.Source == "DNSE").ToListAsync(cancellationToken: stoppingToken);
+                var allSymbols = dbPositions.Select(p => p.Symbol)
+                                          .Concat(userTransactions.Select(t => t.Symbol))
+                                          .Distinct()
+                                          .ToList();
+
+                // Cập nhật giá thật
+                try
+                {
+                    await _logService.FetchRealPricesAsync(allSymbols);
+                }
+                catch { }
+
+                var stocks = _logService.GetStockStates();
+                var pref = await context.UserPreferences.FirstOrDefaultAsync(cancellationToken: stoppingToken);
+                if (pref == null) return;
+
+                var positions = new List<TradePosition>();
+                foreach (var symbol in allSymbols)
+                {
+                    var openPos = dbPositions.FirstOrDefault(p => p.Symbol == symbol && p.Status == "OPEN");
+                    if (openPos != null)
+                    {
+                        positions.Add(openPos);
+                    }
+                    else
+                    {
+                        var closedPos = dbPositions.FirstOrDefault(p => p.Symbol == symbol && p.Status == "CLOSED");
+                        if (closedPos != null)
+                        {
+                            var symbolSells = userTransactions.Where(t => t.Symbol == symbol && t.TransactionType == "SELL" && t.PnlAmount.HasValue).ToList();
+                            if (symbolSells.Any())
+                            {
+                                closedPos.PnL = symbolSells.Sum(t => t.PnlAmount.Value);
+                            }
+                            positions.Add(closedPos);
+                        }
+                    }
+                }
+
+                var closedPositions = positions.Where(p => p.Status == "CLOSED").ToList();
+                decimal totalPnL = 0;
+                decimal totalRealizedPnL = userTransactions.Any(t => t.TransactionType == "SELL" && t.PnlAmount.HasValue)
+                    ? userTransactions.Where(t => t.TransactionType == "SELL" && t.PnlAmount.HasValue).Sum(t => t.PnlAmount.Value)
+                    : closedPositions.Sum(p => p.PnL);
+                decimal cumulativePnL = totalRealizedPnL;
+
+                var openPositions = positions.Where(p => p.Status == "OPEN").ToList();
+                foreach (var pos in openPositions)
+                {
+                    var currentStock = stocks.FirstOrDefault(s => s.Symbol == pos.Symbol);
+                    var currentPrice = currentStock?.CurrentPrice ?? pos.EntryPrice;
+                    pos.PnL = (currentPrice - pos.EntryPrice) * pos.Quantity;
+                    totalPnL += pos.PnL;
+                }
+                cumulativePnL += totalPnL;
+
+                decimal totalTargetAmount = 0;
+                foreach (var pos in positions)
+                {
+                    if (pos.TargetProfitAmount.HasValue && pos.TargetProfitAmount.Value > 0)
+                    {
+                        totalTargetAmount += pos.TargetProfitAmount.Value;
+                    }
+                }
+
+                // Chuyển đổi StockViewModel
+                var stockViewModels = stocks.Select(s => new StockViewModel
+                {
+                    Symbol = s.Symbol,
+                    CompanyName = s.CompanyName,
+                    CurrentPrice = s.CurrentPrice,
+                    ChangePercentage = s.ChangePercentage,
+                    Rsi = s.Rsi,
+                    AiSignal = s.AiSignal,
+                    Exchange = s.Exchange
+                }).ToList();
+
+                var plan = await copilotService.GenerateGlobalPortfolioPlanAsync(openPositions, pref, stockViewModels, cumulativePnL, totalTargetAmount);
+
+                if (plan != null)
+                {
+                    var targetAmountToUse = pref.TargetAmount;
+                    var planStartDate = pref.PlanStartDate ?? DateTime.Today;
+                    decimal planRealizedPnL = userTransactions
+                        .Where(t => t.TransactionType == "SELL" && t.PnlAmount.HasValue && t.TransactionDate >= planStartDate)
+                        .Sum(t => t.PnlAmount.Value);
+                    decimal planUnrealizedPnL = positions
+                        .Where(p => p.Status == "OPEN" && p.EntryDate >= planStartDate)
+                        .Sum(p => p.PnL);
+                    decimal planPnL = planRealizedPnL + planUnrealizedPnL;
+
+                    var remainingProfitNeeded = Math.Max(0m, targetAmountToUse - planPnL);
+                    var options = new System.Text.Json.JsonSerializerOptions
+                    {
+                        PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+                        NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowReadingFromString | System.Text.Json.Serialization.JsonNumberHandling.WriteAsString,
+                        Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() }
+                    };
+                    var investmentPlan = new InvestmentPlan
+                    {
+                        RunDate = DateTime.Now,
+                        StartDate = plan.StartDate == default ? planStartDate : plan.StartDate,
+                        EndDate = plan.EndDate == default ? DateTime.Today : plan.EndDate,
+                        Capital = pref.AmountPerTrade,
+                        TargetProfit = targetAmountToUse,
+                        ActualProfit = planPnL,
+                        RemainingProfitNeeded = remainingProfitNeeded,
+                        DaysRemainingAtRun = plan.RemainingDays,
+                        SuccessProbability = (decimal)plan.SuccessProbability,
+                        Status = "Active",
+                        DailyCalendarJson = System.Text.Json.JsonSerializer.Serialize(plan, options)
+                    };
+
+                    context.InvestmentPlans?.Add(investmentPlan);
+                    await context.SaveChangesAsync(stoppingToken);
+                    _logService.AddLog($"[System] Cập nhật Kế hoạch đầu tư thành công từ dữ liệu DNSE đồng bộ! Xác suất mới: {plan.SuccessProbability}%");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Lỗi cập nhật kế hoạch từ DNSE.");
+                _logService.AddLog($"[Error] Lỗi lập kế hoạch sau đồng bộ DNSE: {ex.Message}");
+            }
+            finally
+            {
+                _lastDnseSyncAndPlanUpdate = DateTime.Now;
+            }
         }
     }
 }

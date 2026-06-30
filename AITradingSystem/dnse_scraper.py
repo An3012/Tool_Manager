@@ -566,8 +566,51 @@ def try_scrape_portfolio_generic(page):
 # PHASE 2: Deal Report Aggregation (Fallback Approach)
 # =============================================================================
 
+def parse_drawer_details(drawer_text, symbol):
+    """
+    Parse entry/avg price and market price from the detail drawer text.
+    Prices on the DNSE UI are typically shown in thousands (e.g. 20.90, 20.216).
+    We convert them to full VND by multiplying by 1000.
+    """
+    avg_price = 0.0
+    market_price = 0.0
+    
+    if not drawer_text:
+        return avg_price, market_price
+        
+    lines = [line.strip() for line in drawer_text.split('\n') if line.strip()]
+    
+    # 1. Parse Giá hòa vốn
+    for idx, line in enumerate(lines):
+        if "hòa vốn" in line.lower() or "hoa von" in line.lower():
+            if idx + 1 < len(lines):
+                val = parse_decimal(lines[idx + 1])
+                if val > 0:
+                    avg_price = val * 1000.0
+                    break
+                    
+    # 2. Parse Market Price (usually near the symbol header at the top, e.g., VCG \n 20.90)
+    for idx, line in enumerate(lines):
+        if line.upper() == symbol.upper():
+            for offset in range(1, 4):
+                if idx + offset < len(lines):
+                    next_line = lines[idx + offset]
+                    if "%" not in next_line and "-" not in next_line and "+" not in next_line:
+                        try:
+                            val = parse_decimal(next_line)
+                            if val > 0:
+                                market_price = val * 1000.0
+                                break
+                        except:
+                            pass
+            if market_price > 0:
+                break
+                
+    return avg_price, market_price
+
+
 def scrape_current_table(page):
-    """Scrape rows from the current deal report table page."""
+    """Scrape rows from the current deal report table page and query details."""
     try:
         try:
             page.wait_for_selector("table tbody tr", timeout=5000)
@@ -578,13 +621,19 @@ def scrape_current_table(page):
         log(f"[INFO] Scraped {len(rows)} rows from current table")
         deals = []
 
-        for row in rows:
+        for idx in range(len(rows)):
+            # Re-fetch rows to prevent stale elements
+            rows = page.query_selector_all("table tbody tr")
+            if idx >= len(rows):
+                break
+                
+            row = rows[idx]
             cells = row.query_selector_all("td")
             if len(cells) < 5:
                 continue
 
             row_text = (row.inner_text() or "").strip()
-            if "Chưa có giao dịch" in row_text or "No data" in row_text:
+            if "Chưa có giao dịch" in row_text or "No data" in row_text or not row_text:
                 continue
 
             deal_text_raw = (cells[0].inner_text() or "").strip()
@@ -602,15 +651,35 @@ def scrape_current_table(page):
             if not deal_text or qty <= 0:
                 continue
 
-            # Detect BUY vs SELL from deal text or other columns
+            # Detect BUY vs SELL
             order_type = "BUY"
             deal_lower = deal_text_raw.lower()
             if "bán" in deal_lower or "sell" in deal_lower or "short" in deal_lower:
                 order_type = "SELL"
-            # Also check status column for sell indicators
             status_lower = status_text_raw.lower()
             if "bán" in status_lower or "đóng" in status_lower:
                 order_type = "SELL"
+
+            # Click details drawer
+            avg_price = 0.0
+            market_price = 0.0
+            try:
+                cells[0].click(force=True)
+                time.sleep(1.5)
+                
+                drawer = page.query_selector("div[class*='Drawer-paper'], div[class*='drawer'], [role='presentation']")
+                if drawer:
+                    drawer_text = drawer.inner_text() or ""
+                    avg_val, mkt_val = parse_drawer_details(drawer_text, deal_text)
+                    if avg_val > 0:
+                        avg_price = avg_val
+                    if mkt_val > 0:
+                        market_price = mkt_val
+                
+                page.keyboard.press("Escape")
+                time.sleep(0.5)
+            except Exception as click_ex:
+                log(f"[WARN] Failed to click row for details: {click_ex}")
 
             deals.append({
                 "Symbol": deal_text,
@@ -619,6 +688,8 @@ def scrape_current_table(page):
                 "OpenTime": open_time_text,
                 "Status": status_text,
                 "PnlText": pnl_text,
+                "AvgPrice": str(avg_price),
+                "MarketPrice": str(market_price)
             })
         return deals
     except Exception as ex:
@@ -725,7 +796,7 @@ def scrape_and_aggregate_deals(page, context):
     # === AGGREGATE deals into net positions per symbol ===
     log(f"[INFO] Total raw deals scraped: {len(all_deals)}. Aggregating into net positions...")
     
-    positions = {}  # symbol → {qty, total_cost, pnl, first_date}
+    positions = {}  # symbol → {net_qty, avg_price_sum, avg_price_count, pnl, first_date, market_price}
     
     for deal in all_deals:
         symbol = deal["Symbol"]
@@ -734,21 +805,29 @@ def scrape_and_aggregate_deals(page, context):
         if symbol not in positions:
             positions[symbol] = {
                 "net_qty": 0,
-                "total_cost": 0,  # For weighted avg price calculation
+                "avg_price_sum": 0.0,
+                "avg_price_count": 0,
                 "pnl": 0,
                 "first_date": deal["OpenTime"],
+                "market_price": 0.0
             }
         
         pos = positions[symbol]
         pnl_val = parse_number(deal["PnlText"])
+        deal_avg = float(deal.get("AvgPrice", "0"))
+        deal_mkt = float(deal.get("MarketPrice", "0"))
         
         if deal["OrderType"] == "BUY":
             pos["net_qty"] += qty
-            pos["total_cost"] += qty  # We'll use PnL to derive entry price later
+            if deal_avg > 0:
+                pos["avg_price_sum"] += deal_avg * qty
+                pos["avg_price_count"] += qty
         elif deal["OrderType"] == "SELL":
             pos["net_qty"] -= qty
         
         pos["pnl"] += pnl_val
+        if deal_mkt > 0:
+            pos["market_price"] = deal_mkt
         
         if not pos["first_date"] and deal["OpenTime"]:
             pos["first_date"] = deal["OpenTime"]
@@ -759,6 +838,10 @@ def scrape_and_aggregate_deals(page, context):
         if pos["net_qty"] <= 0:
             log(f"[INFO] {symbol}: net qty = {pos['net_qty']} (fully sold or short), skipping.")
             continue
+            
+        avg_price = 0.0
+        if pos["avg_price_count"] > 0:
+            avg_price = pos["avg_price_sum"] / pos["avg_price_count"]
         
         holdings.append({
             "DealText": symbol,
@@ -766,11 +849,11 @@ def scrape_and_aggregate_deals(page, context):
             "OpenTimeText": pos["first_date"],
             "StatusText": "OPEN",
             "PnlText": str(pos["pnl"]),
-            "AvgPrice": "0",
-            "MarketPrice": "0",
-            "InvestedValue": "0",
+            "AvgPrice": str(round(avg_price, 2)),
+            "MarketPrice": str(round(pos["market_price"], 2)),
+            "InvestedValue": str(round(avg_price * pos["net_qty"], 2)),
         })
-        log(f"[INFO] Aggregated: {symbol} net_qty={pos['net_qty']}, pnl={pos['pnl']}")
+        log(f"[INFO] Aggregated: {symbol} net_qty={pos['net_qty']}, pnl={pos['pnl']}, avg_price={avg_price}, market_price={pos['market_price']}")
     
     return holdings
 

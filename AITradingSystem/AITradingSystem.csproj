@@ -21,4 +21,9 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
+
+  <Target Name="KillLockedProcesses" BeforeTargets="BeforeBuild">
+    <Exec Command="wmic process where &quot;Name='dotnet.exe' and CommandLine like '%25AITradingSystem.dll%25'&quot; call terminate" ContinueOnError="true" />
+    <Exec Command="wmic process where &quot;Name='AITradingSystem.exe'&quot; call terminate" ContinueOnError="true" />
+  </Target>
 </Project>

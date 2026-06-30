@@ -158,54 +158,50 @@ namespace AITradingSystem.Services
 
                 var symbolsQuery = string.Join(",", targetSymbols);
 
-                // Gọi API DNSE Stock (public, không cần auth)
-                var url = $"https://dchart-api.vndirect.com.vn/dchart/history?resolution=1&symbol={symbolsQuery}&from={DateTimeOffset.UtcNow.AddMinutes(-30).ToUnixTimeSeconds()}&to={DateTimeOffset.UtcNow.ToUnixTimeSeconds()}";
-
-                // Fallback: gọi từng mã qua API giá hiện tại của DNSE
+                // Cập nhật giá thời gian thực kết hợp dchart (real-time intraday) từ DNSE OHLC
                 int successCount = 0;
+                var fromTime = DateTimeOffset.UtcNow.AddDays(-10).ToUnixTimeSeconds();
+                var toTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+
                 foreach (var symbol in targetSymbols)
                 {
                     try
                     {
-                        var priceUrl = $"https://finfo-api.vndirect.com.vn/v4/stock_price?sort=date&q=code:{symbol}~type:STOCK&size=1&page=1";
-                        var request = new HttpRequestMessage(HttpMethod.Get, priceUrl);
+                        var ohlcUrl = $"https://api.dnse.com.vn/chart-api/v2/ohlcs/stock?resolution=1D&symbol={symbol}&from={fromTime}&to={toTime}";
+                        var request = new HttpRequestMessage(HttpMethod.Get, ohlcUrl);
                         request.Headers.Add("Accept", "application/json");
                         request.Headers.Add("User-Agent", "AITradingCopilot/1.0");
 
                         var response = await _httpClient.SendAsync(request);
-                        if (!response.IsSuccessStatusCode) continue;
+                        if (response.IsSuccessStatusCode)
+                        {
+                            var json = await response.Content.ReadAsStringAsync();
+                            using var doc = JsonDocument.Parse(json);
+                            var root = doc.RootElement;
+                            if (root.TryGetProperty("c", out var cArr) && cArr.GetArrayLength() > 0)
+                            {
+                                int length = cArr.GetArrayLength();
+                                decimal closePrice = cArr[length - 1].GetDecimal() * 1000m;
+                                decimal basicPrice = length >= 2 ? cArr[length - 2].GetDecimal() * 1000m : closePrice;
+                                decimal change = 0m;
 
-                        var json = await response.Content.ReadAsStringAsync();
-                        using var doc = JsonDocument.Parse(json);
-                        var data = doc.RootElement.GetProperty("data");
-                        if (data.GetArrayLength() == 0) continue;
+                                if (basicPrice > 0)
+                                {
+                                    change = Math.Round((closePrice - basicPrice) / basicPrice * 100m, 2);
+                                }
 
-                        var item = data[0];
-                        decimal closePrice = 0;
-                        decimal change = 0;
+                                // Giữ nguyên RSI hoặc cập nhật nhẹ
+                                var existingStock = GetStockState(symbol);
+                                decimal rsi = existingStock?.Rsi ?? 50m;
 
-                        // Lấy giá đóng cửa gần nhất
-                        if (item.TryGetProperty("adClose", out var adClose))
-                            closePrice = adClose.GetDecimal() * 1000; // API trả đơn vị nghìn đồng
-                        else if (item.TryGetProperty("close", out var close))
-                            closePrice = close.GetDecimal() * 1000;
-
-                        if (closePrice <= 0) continue;
-
-                        // Tính % thay đổi
-                        if (item.TryGetProperty("pctChange", out var pctChange))
-                            change = pctChange.GetDecimal();
-
-                        // Tính RSI ước lượng từ biến động giá
-                        var existingStock = GetStockState(symbol);
-                        decimal rsi = existingStock?.Rsi ?? 50m;
-
-                        UpdateOrAddStockState(symbol, closePrice, change, rsi);
-                        successCount++;
+                                UpdateOrAddStockState(symbol, closePrice, change, rsi);
+                                successCount++;
+                            }
+                        }
                     }
-                    catch
+                    catch (Exception ex)
                     {
-                        // Bỏ qua lỗi cho từng mã cụ thể, tiếp tục mã khác
+                        Console.WriteLine($"[DNSE API Error] Symbol {symbol}: {ex.Message}");
                     }
                 }
 
