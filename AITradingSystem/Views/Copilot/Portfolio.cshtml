@@ -448,16 +448,10 @@ margin-bottom: 0 !important;
         </div>
     </div>
     <div class="summary-card pnl-card" style="border-top: 3px solid var(--accent-blue);">
-        <div class="card-label">Tổng lãi/lỗ tạm tính</div>
+        <div class="card-label">Tổng lãi/lỗ tạm tính trong kỳ</div>
         <div class="card-value @(totalPnL >= 0 ? "pnl-positive" : "pnl-negative")">
         @(totalPnL >= 0 ? "+" : "")@totalPnL.ToString("N0") đ
     </div>
-</div>
-<div class="summary-card pnl-card" style="border-top: 3px solid var(--accent-purple);">
-    <div class="card-label">Tổng lợi nhuận tích lũy</div>
-    <div class="card-value @(cumulativePnL >= 0 ? "pnl-positive" : "pnl-negative")">
-    @(cumulativePnL >= 0 ? "+" : "")@cumulativePnL.ToString("N0") đ
-</div>
 </div>
 <div class="summary-card pnl-card" style="border-top: 3px solid var(--accent-cyan);">
     <div class="card-label">Lãi/lỗ trong kỳ kế hoạch</div>

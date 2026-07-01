@@ -417,7 +417,13 @@ namespace AITradingSystem.Services
                     Exchange = s.Exchange
                 }).ToList();
 
-                var plan = await copilotService.GenerateGlobalPortfolioPlanAsync(openPositions, pref, stockViewModels, cumulativePnL, totalTargetAmount);
+                var planStartDate = pref.PlanStartDate ?? DateTime.Today;
+                decimal planRealizedPnL = userTransactions
+                    .Where(t => t.TransactionType == "SELL" && t.PnlAmount.HasValue && t.TransactionDate >= planStartDate)
+                    .Sum(t => t.PnlAmount.Value);
+                decimal planPnL = planRealizedPnL;
+
+                var plan = await copilotService.GenerateGlobalPortfolioPlanAsync(openPositions, pref, stockViewModels, planPnL, totalTargetAmount);
 
                 var existingActivePlan = await context.InvestmentPlans
                         .Where(p => p.Status == "Active")
@@ -440,14 +446,9 @@ namespace AITradingSystem.Services
                 if (plan != null)
                 {
                     var targetAmountToUse = pref.TargetAmount;
-                    var planStartDate = pref.PlanStartDate ?? DateTime.Today;
-                    decimal planRealizedPnL = userTransactions
-                        .Where(t => t.TransactionType == "SELL" && t.PnlAmount.HasValue && t.TransactionDate >= planStartDate)
-                        .Sum(t => t.PnlAmount.Value);
                     decimal planUnrealizedPnL = positions
                         .Where(p => p.Status == "OPEN" && p.EntryDate >= planStartDate)
                         .Sum(p => p.PnL);
-                    decimal planPnL = planRealizedPnL;
 
                     var remainingProfitNeeded = Math.Max(0m, targetAmountToUse - planPnL);
                     var options = new System.Text.Json.JsonSerializerOptions
